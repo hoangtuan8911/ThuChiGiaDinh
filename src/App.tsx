@@ -32,6 +32,7 @@ import {
 import { normalize } from "./migrate";
 import { ReportSheet } from "./report";
 import { SOURCE } from "./source";
+import { storageNotice } from "./browserNotice";
 import { currentRevision, loadAppData, loadMirror, loadUndo, mirrorCurrent, rememberRevision, saveAppData, saveUndo } from "./storage";
 import type { Account, AccountKind, AppData, Flow, Tone, Transaction, TxType } from "./types";
 
@@ -50,7 +51,7 @@ const HELP: { title: string; body: string }[] = [
   { title: "Báo cáo theo tháng", body: "Nút Báo cáo vẽ cột thu và chi từng tháng. Chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc tự chọn từ tháng đến tháng để so sánh. Chuyển khoản không tính." },
   { title: "Xuất PDF", body: "Nút cuối trang xuất báo cáo của tháng đang xem, khổ A4, chữ tiếng Việt chọn được." },
   { title: "Dữ liệu nằm trên máy này", body: "App không gửi số liệu đi đâu và không tự đồng bộ giữa các máy. Muốn chuyển máy: bấm Sao lưu, giữ file JSON, rồi Khôi phục trên máy kia." },
-  { title: "Dữ liệu có thể mất", body: "Trên iPhone hãy luôn mở từ icon Màn hình chính. Tab Riêng tư, Zalo hoặc Facebook là sổ khác, tắt đi là mất. Safari và icon cũng là hai sổ khác nhau. Nên sao lưu file JSON mỗi tháng." },
+  { title: "Dữ liệu có thể mất", body: "Trên iPhone, Chrome, Safari và icon Màn hình chính là ba sổ khác nhau. Sổ nhập trong Chrome không hiện khi mở icon. Muốn đưa sang icon: trong Chrome bấm Sao lưu, mở icon, bấm Khôi phục. Sau đó chỉ nhập ở một chỗ. Tab Riêng tư, Zalo hoặc Facebook cũng là sổ khác." },
   { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
 ];
 
@@ -74,7 +75,8 @@ export function App() {
   const [saveError, setSaveError] = useState<string | null>(loaded.error);
   const [month, setMonth] = useState(currentMonth);
   const [hasUndo, setHasUndo] = useState(() => loadUndo() !== null);
-  const [storageWarning] = useState<string | null>(() => browserWarning());
+  const [storageEnv] = useState(() => readStorageEnv());
+  const storageWarning = storageNotice({ ...storageEnv, hasEntries: data.transactions.length > 0 });
   const [showTotals, setShowTotals] = useState(() => readFlag(SHOW_TOTALS_KEY));
   const [showBalances, setShowBalances] = useState(() => readFlag(SHOW_BALANCES_KEY));
   const [dialogs, setDialogs] = useState<Dialog[]>([]);
@@ -853,25 +855,24 @@ function toggleFlag(key: string, current: boolean): boolean {
   return next;
 }
 
-function browserWarning(): string | null {
+function readStorageEnv(): Omit<Parameters<typeof storageNotice>[0], "hasEntries"> {
+  let canWrite = true;
   try {
     localStorage.setItem("tcgd_probe", "1");
     localStorage.removeItem("tcgd_probe");
   } catch {
-    return "Máy không cho lưu sổ. Hãy tắt tab Riêng tư, mở bằng Safari, rồi thêm vào Màn hình chính.";
+    canWrite = false;
   }
   const agent = navigator.userAgent;
-  if (/Zalo|FBAN|FBAV|Instagram|Line\//.test(agent)) {
-    return "Đang mở trong ứng dụng khác. Sổ sẽ mất khi đóng. Hãy mở link bằng Safari, rồi thêm vào Màn hình chính.";
-  }
-  const ios = /iPhone|iPad|iPod/.test(agent);
-  const standalone =
-    window.matchMedia("(display-mode: standalone)").matches ||
-    (navigator as Navigator & { standalone?: boolean }).standalone === true;
-  if (ios && !standalone) {
-    return "Đang mở trong Safari. Tắt trình duyệt có thể làm mất sổ. Hãy thêm vào Màn hình chính và luôn mở từ icon đó.";
-  }
-  return null;
+  return {
+    canWrite,
+    inApp: /Zalo|FBAN|FBAV|Instagram|Line\//.test(agent),
+    ios: /iPhone|iPad|iPod/.test(agent),
+    chrome: /CriOS/.test(agent),
+    standalone:
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true,
+  };
 }
 
 function toneClass(tone: Tone): string {
