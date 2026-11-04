@@ -1,5 +1,5 @@
 import { PALETTE } from "./defaults";
-import { formatVnd } from "./money";
+import { formatVnd, shiftMonth } from "./money";
 import type { Account, AppData, Category, Tone, Transaction } from "./types";
 
 export interface AccountSnapshot {
@@ -77,6 +77,47 @@ export function accountSnapshots(data: AppData): AccountSnapshot[] {
       showWarning: balance < 0,
     };
   });
+}
+
+export interface MonthPoint {
+  month: string;
+  income: number;
+  expense: number;
+  left: number;
+}
+
+const MONTH_LIMIT = 48;
+
+/** Các tháng từ `from` đến `to`, kể cả hai đầu. Đảo đầu cuối vẫn đọc được. Quá 4 năm thì giữ 48 tháng gần cuối. */
+export function monthSpan(from: string, to: string): { months: string[]; truncated: boolean } {
+  if (!isMonth(from) || !isMonth(to)) return { months: [], truncated: false };
+  const start = from <= to ? from : to;
+  const end = from <= to ? to : from;
+  const months: string[] = [];
+  let cursor = start;
+  let guard = 0;
+  while (cursor <= end && guard < 600) {
+    months.push(cursor);
+    cursor = shiftMonth(cursor, 1);
+    guard += 1;
+  }
+  if (months.length <= MONTH_LIMIT) return { months, truncated: false };
+  return { months: months.slice(months.length - MONTH_LIMIT), truncated: true };
+}
+
+export function monthSeries(transactions: Transaction[], from: string, to: string): { points: MonthPoint[]; truncated: boolean } {
+  const span = monthSpan(from, to);
+  const points = span.months.map((month) => {
+    const totals = monthTotals(transactions, month);
+    return { month, income: totals.income, expense: totals.expense, left: totals.left };
+  });
+  return { points, truncated: span.truncated };
+}
+
+function isMonth(value: string): boolean {
+  if (!/^\d{4}-\d{2}$/.test(value)) return false;
+  const month = Number(value.slice(5, 7));
+  return month >= 1 && month <= 12;
 }
 
 export function monthTotals(transactions: Transaction[], month: string): MonthTotals {
