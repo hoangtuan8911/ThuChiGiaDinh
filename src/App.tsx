@@ -30,6 +30,7 @@ import {
   type Result,
 } from "./mutate";
 import { normalize } from "./migrate";
+import { ReportSheet } from "./report";
 import { SOURCE } from "./source";
 import { currentRevision, loadAppData, loadMirror, loadUndo, mirrorCurrent, rememberRevision, saveAppData, saveUndo } from "./storage";
 import type { Account, AccountKind, AppData, Flow, Tone, Transaction, TxType } from "./types";
@@ -46,6 +47,7 @@ const HELP: { title: string; body: string }[] = [
   { title: "Chuyển khoản", body: "Dùng để trả thẻ hoặc chuyển giữa các tài khoản. Không tính là thu hay chi." },
   { title: "Ngân sách", body: "Hạn mức chi mỗi tháng cho từng danh mục cha. Dưới 80% bình thường, từ 80% đến 100% là Sát mức (cam), trên 100% là VƯỢT (đỏ)." },
   { title: "Cảnh báo màu", body: "Chi/Thu từ 90% tô cam, trên 100% tô đỏ. Còn lại âm và số dư âm có dấu ⚠. Thẻ còn dưới 20% hạn mức thì cam, âm thì đỏ." },
+  { title: "Báo cáo theo tháng", body: "Nút Báo cáo vẽ cột thu và chi từng tháng. Chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc tự chọn từ tháng đến tháng để so sánh. Chuyển khoản không tính." },
   { title: "Xuất PDF", body: "Nút cuối trang xuất báo cáo của tháng đang xem, khổ A4, chữ tiếng Việt chọn được." },
   { title: "Dữ liệu nằm trên máy này", body: "App không gửi số liệu đi đâu và không tự đồng bộ giữa các máy. Muốn chuyển máy: bấm Sao lưu, giữ file JSON, rồi Khôi phục trên máy kia." },
   { title: "Dữ liệu có thể mất", body: "Trên iPhone hãy luôn mở từ icon Màn hình chính. Tab Riêng tư, Zalo hoặc Facebook là sổ khác, tắt đi là mất. Safari và icon cũng là hai sổ khác nhau. Nên sao lưu file JSON mỗi tháng." },
@@ -60,6 +62,7 @@ type Dialog =
   | { kind: "account"; id?: string }
   | { kind: "cats"; flow: Flow }
   | { kind: "budgets" }
+  | { kind: "report" }
   | { kind: "help" }
   | { kind: "source" };
 
@@ -317,6 +320,7 @@ export function App() {
             <button type="button" className="ib" onClick={() => push({ kind: "accounts" })}>🏦 Tài khoản</button>
             <button type="button" className="ib" onClick={() => push({ kind: "cats", flow: "expense" })}>⚙ Danh mục</button>
             <button type="button" className="ib" onClick={() => push({ kind: "budgets" })}>🎯 Ngân sách</button>
+            <button type="button" className="ib" onClick={() => push({ kind: "report" })}>📊 Báo cáo</button>
             <button type="button" className="ib" onClick={() => push({ kind: "help" })}>❓ Hướng dẫn</button>
           </div>
         </div>
@@ -642,6 +646,7 @@ export function App() {
               }}
             />
           )}
+          {dialog.kind === "report" && <ReportSheet transactions={data.transactions} endMonth={month} onClose={pop} />}
           {dialog.kind === "help" && (
             <>
               <h3>❓ Hướng dẫn</h3>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountSnapshots, backupAgeDays, categorySpend, monthTotals, moveWithinDay, screenOrder } from "./calc";
+import { accountSnapshots, backupAgeDays, categorySpend, monthSeries, monthTotals, moveWithinDay, screenOrder } from "./calc";
 import { freshData } from "./defaults";
 import { normalize } from "./migrate";
 import { parseAmount } from "./money";
@@ -65,6 +65,30 @@ describe("số dư và thẻ", () => {
     const month = monthTotals(data.transactions, "2026-11");
     expect(month.income).toBe(30_000_000);
     expect(month.expense).toBe(8_000_000);
+  });
+
+  it("so sánh thu chi theo tháng, bỏ chuyển khoản và giữ tháng trống", () => {
+    const txs = [
+      tx({ id: 1, type: "t", date: "2026-10-01", amount: 100, accountId: "a1" }),
+      tx({ id: 2, type: "x", date: "2026-11-02", amount: 40, accountId: "a1" }),
+      tx({ id: 3, type: "p", date: "2026-11-03", amount: 999, accountId: "a1", toAccountId: "a2" }),
+      tx({ id: 4, type: "t", date: "2026-12-01", amount: 5, accountId: "a1" }),
+    ];
+    const { points, truncated } = monthSeries(txs, "2026-12", "2026-10");
+    expect(truncated).toBe(false);
+    expect(points.map((point) => point.month)).toEqual(["2026-10", "2026-11", "2026-12"]);
+    expect(points[0]).toMatchObject({ income: 100, expense: 0, left: 100 });
+    expect(points[1]).toMatchObject({ income: 0, expense: 40, left: -40 });
+    expect(points[2]).toMatchObject({ income: 5, expense: 0, left: 5 });
+    expect(monthSeries(txs, "không", "2026-11").points).toEqual([]);
+  });
+
+  it("khoảng dài hơn 4 năm chỉ lấy 48 tháng gần nhất", () => {
+    const { points, truncated } = monthSeries([], "2020-01", "2026-12");
+    expect(truncated).toBe(true);
+    expect(points).toHaveLength(48);
+    expect(points[0]?.month).toBe("2023-01");
+    expect(points.at(-1)?.month).toBe("2026-12");
   });
 
   it("tô màu Chi/Thu, còn lại, ngân sách và khả dụng thẻ", () => {
