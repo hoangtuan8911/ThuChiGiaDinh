@@ -40,6 +40,7 @@ const HELP: { title: string; body: string }[] = [
   { title: "Nhập liệu ngay trên trang chủ", body: "Chọn Thu, Chi hoặc Chuyển. Số tiền gõ nhanh: 50k, 1.5tr, 150.000. Chọn ngày, danh mục rồi bấm Lưu." },
   { title: "Sửa, xóa, sắp xếp", body: "Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày." },
   { title: "Chuyển tháng", body: "Nút ◀ ▶ đổi tháng đang xem. Số dư tài khoản là số đến hiện tại, không phụ thuộc tháng." },
+  { title: "Ẩn số", body: "Tổng thu chi và số dư tài khoản được giấu. Bấm Xem khi cần nhìn, bấm Ẩn để giấu lại." },
   { title: "Danh mục", body: "Thêm, đổi tên, đổi màu, xóa danh mục và danh mục con. Đổi tên cập nhật giao dịch cũ và ngân sách. Xóa danh mục không xóa giao dịch cũ." },
   { title: "Tài khoản", body: "Ngân hàng, ví điện tử, tiền mặt và thẻ tín dụng. Thẻ nhập dư nợ ban đầu và hạn mức. Khả dụng = hạn mức − dư nợ, không cộng vào số dư các tài khoản khác. Tài khoản đã có giao dịch thì không xóa được." },
   { title: "Chuyển khoản", body: "Dùng để trả thẻ hoặc chuyển giữa các tài khoản. Không tính là thu hay chi." },
@@ -70,6 +71,8 @@ export function App() {
   const [saveError, setSaveError] = useState<string | null>(loaded.error);
   const [month, setMonth] = useState(currentMonth);
   const [hasUndo, setHasUndo] = useState(() => loadUndo() !== null);
+  const [showTotals, setShowTotals] = useState(() => readFlag(SHOW_TOTALS_KEY));
+  const [showBalances, setShowBalances] = useState(() => readFlag(SHOW_BALANCES_KEY));
   const [dialogs, setDialogs] = useState<Dialog[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
   const [type, setType] = useState<TxType>("x");
@@ -322,23 +325,35 @@ export function App() {
             <button type="button" onClick={() => { saveUndo(null); setHasUndo(false); }}>Giữ bản này</button>
           </div>
         )}
-        <div className="grid">
-          <div className="c thu"><small>Tổng thu</small><div className="v">{formatVnd(totals.income)}</div></div>
-          <div className="c chi"><small>Tổng chi</small><div className="v">{formatVnd(totals.expense)}</div></div>
-          <div className={`c ${totals.left < 0 ? "bad" : "ok"}`}><small>Còn lại</small><div className="v">{totals.left < 0 ? "⚠ " : ""}{formatVnd(totals.left)}</div></div>
-          <div className={`c ${toneClass(totals.tone)}`}><small>Chi / Thu</small><div className="v">{totals.ratioText}{totals.ratioNote}</div></div>
-        </div>
-        <div className="grid gap">
-          {snapshots.map((snapshot) => (
-            <div key={snapshot.account.id} className={`c ${toneClass(snapshot.tone)}`}>
-              <small>{KIND_ICON[snapshot.account.kind]} {snapshot.account.name}{snapshot.account.kind === "cr" ? " · khả dụng" : ""}</small>
-              <div className="v">{primaryText(snapshot)}</div>
-              {snapshot.debt !== null && (
-                <small>Dư nợ {formatVnd(snapshot.debt)}{snapshot.account.limit ? ` / ${formatVnd(snapshot.account.limit)}` : ""}</small>
-              )}
-            </div>
-          ))}
-        </div>
+        <button type="button" className="peek" aria-expanded={showTotals} onClick={() => setShowTotals(toggleFlag(SHOW_TOTALS_KEY, showTotals))}>
+          <span>Tổng thu chi</span>
+          <span>{showTotals ? "Ẩn" : "Xem"}</span>
+        </button>
+        {showTotals && (
+          <div className="grid gap">
+            <div className="c thu"><small>Tổng thu</small><div className="v">{formatVnd(totals.income)}</div></div>
+            <div className="c chi"><small>Tổng chi</small><div className="v">{formatVnd(totals.expense)}</div></div>
+            <div className={`c ${totals.left < 0 ? "bad" : "ok"}`}><small>Còn lại</small><div className="v">{totals.left < 0 ? "⚠ " : ""}{formatVnd(totals.left)}</div></div>
+            <div className={`c ${toneClass(totals.tone)}`}><small>Chi / Thu</small><div className="v">{totals.ratioText}{totals.ratioNote}</div></div>
+          </div>
+        )}
+        <button type="button" className="peek" aria-expanded={showBalances} onClick={() => setShowBalances(toggleFlag(SHOW_BALANCES_KEY, showBalances))}>
+          <span>Số dư tài khoản</span>
+          <span>{showBalances ? "Ẩn" : "Xem"}</span>
+        </button>
+        {showBalances && (
+          <div className="grid gap">
+            {snapshots.map((snapshot) => (
+              <div key={snapshot.account.id} className={`c ${toneClass(snapshot.tone)}`}>
+                <small>{KIND_ICON[snapshot.account.kind]} {snapshot.account.name}{snapshot.account.kind === "cr" ? " · khả dụng" : ""}</small>
+                <div className="v">{primaryText(snapshot)}</div>
+                {snapshot.debt !== null && (
+                  <small>Dư nợ {formatVnd(snapshot.debt)}{snapshot.account.limit ? ` / ${formatVnd(snapshot.account.limit)}` : ""}</small>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         <div className="c fm gap" id="fm" ref={formRef}>
           <h3>{editing === null ? "Thêm giao dịch" : "Sửa giao dịch"}</h3>
           <div className="seg three">
@@ -786,6 +801,27 @@ function BudgetForm({ names, budgets, onCancel, onSave }: { names: string[]; bud
       </div>
     </>
   );
+}
+
+const SHOW_TOTALS_KEY = "tcgd_show_totals";
+const SHOW_BALANCES_KEY = "tcgd_show_balances";
+
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function toggleFlag(key: string, current: boolean): boolean {
+  const next = !current;
+  try {
+    localStorage.setItem(key, next ? "1" : "0");
+  } catch {
+    // Máy không cho ghi thì vẫn đổi trên màn hình lần này.
+  }
+  return next;
 }
 
 function toneClass(tone: Tone): string {
