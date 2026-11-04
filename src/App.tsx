@@ -1,200 +1,846 @@
-import { useEffect, useState } from "react";
-import { currentMonth, formatMonth, formatVnd } from "./format";
-import { monthFlow } from "./ledger";
-import { NavigateProvider, useGo, type View } from "./nav";
-import { AccountsPage } from "./pages/AccountsPage";
-import { CategoriesPage } from "./pages/CategoriesPage";
-import { HistoryPage } from "./pages/HistoryPage";
-import { OverviewPage } from "./pages/OverviewPage";
-import { LedgerProvider, useLedger } from "./store";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import {
+  accountSnapshots,
+  allCategories,
+  backupAgeDays,
+  categoryColor,
+  categorySpend,
+  monthTotals,
+  moveWithinDay,
+  screenOrder,
+  type AccountSnapshot,
+} from "./calc";
+import fontUrl from "./fonts/Roboto-Regular.ttf?url";
+import { currentMonth, formatDay, formatFullDay, formatVnd, monthLabel, shiftMonth, todayISO } from "./money";
+import {
+  addCategory,
+  addSub,
+  deleteAccount,
+  deleteCategory,
+  deleteSub,
+  deleteTransaction,
+  listOf,
+  renameCategory,
+  renameSub,
+  saveAccount,
+  saveBudgets,
+  saveTransaction,
+  setCategoryColor,
+  type AccountInput,
+  type Result,
+} from "./mutate";
+import { normalize } from "./migrate";
+import { SOURCE } from "./source";
+import { loadAppData, loadUndo, saveAppData, saveUndo } from "./storage";
+import type { Account, AccountKind, AppData, Flow, Tone, Transaction, TxType } from "./types";
 
-const VIEWS: { id: View; label: string }[] = [
-  { id: "overview", label: "Tổng quan" },
-  { id: "accounts", label: "Tài khoản" },
-  { id: "categories", label: "Danh mục" },
-  { id: "history", label: "Lịch sử" },
+const KIND_ICON: Record<AccountKind, string> = { bank: "🏦", ew: "📱", cash: "💵", cr: "💳" };
+
+const HELP: { title: string; body: string }[] = [
+  { title: "Nhập liệu ngay trên trang chủ", body: "Chọn Thu, Chi hoặc Chuyển. Số tiền gõ nhanh: 50k, 1.5tr, 150.000. Chọn ngày, danh mục rồi bấm Lưu." },
+  { title: "Sửa, xóa, sắp xếp", body: "Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày." },
+  { title: "Chuyển tháng", body: "Nút ◀ ▶ đổi tháng đang xem. Số dư tài khoản là số đến hiện tại, không phụ thuộc tháng." },
+  { title: "Danh mục", body: "Thêm, đổi tên, đổi màu, xóa danh mục và danh mục con. Đổi tên cập nhật giao dịch cũ và ngân sách. Xóa danh mục không xóa giao dịch cũ." },
+  { title: "Tài khoản", body: "Ngân hàng, ví điện tử, tiền mặt và thẻ tín dụng. Thẻ nhập dư nợ ban đầu và hạn mức. Khả dụng = hạn mức − dư nợ, không cộng vào số dư các tài khoản khác. Tài khoản đã có giao dịch thì không xóa được." },
+  { title: "Chuyển khoản", body: "Dùng để trả thẻ hoặc chuyển giữa các tài khoản. Không tính là thu hay chi." },
+  { title: "Ngân sách", body: "Hạn mức chi mỗi tháng cho từng danh mục cha. Dưới 80% bình thường, từ 80% đến 100% là Sát mức (cam), trên 100% là VƯỢT (đỏ)." },
+  { title: "Cảnh báo màu", body: "Chi/Thu từ 90% tô cam, trên 100% tô đỏ. Còn lại âm và số dư âm có dấu ⚠. Thẻ còn dưới 20% hạn mức thì cam, âm thì đỏ." },
+  { title: "Xuất PDF", body: "Nút cuối trang xuất báo cáo của tháng đang xem, khổ A4, chữ tiếng Việt chọn được." },
+  { title: "Dữ liệu nằm trên máy này", body: "App không gửi số liệu đi đâu và không tự đồng bộ giữa các máy. Muốn chuyển máy: bấm Sao lưu, giữ file JSON, rồi Khôi phục trên máy kia." },
+  { title: "Dữ liệu có thể mất", body: "Mất nếu xóa dữ liệu trang web, dùng chế độ riêng tư, đổi hoặc cài lại điện thoại, hoặc trên Safari không mở app khoảng 7 ngày khi chưa thêm vào Màn hình chính. Nên thêm vào Màn hình chính, luôn mở từ icon đó, và sao lưu mỗi tháng." },
+  { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
 ];
 
-function readView(): View {
-  const hash = window.location.hash.replace("#", "");
-  if (hash === "accounts" || hash === "categories" || hash === "history" || hash === "overview") return hash;
-  return "overview";
-}
+type Dialog =
+  | { kind: "msg"; text: string }
+  | { kind: "yes"; text: string; onYes: () => void }
+  | { kind: "ask"; title: string; onOk: (value: string) => void }
+  | { kind: "accounts" }
+  | { kind: "account"; id?: string }
+  | { kind: "cats"; flow: Flow }
+  | { kind: "budgets" }
+  | { kind: "help" }
+  | { kind: "source" };
+
+const loaded = loadAppData();
 
 export function App() {
-  return (
-    <LedgerProvider>
-      <Shell />
-    </LedgerProvider>
-  );
-}
+  const [data, setData] = useState<AppData>(loaded.data);
+  const dataRef = useRef(data);
+  const [saveError, setSaveError] = useState<string | null>(loaded.error);
+  const [month, setMonth] = useState(currentMonth);
+  const [hasUndo, setHasUndo] = useState(() => loadUndo() !== null);
+  const [dialogs, setDialogs] = useState<Dialog[]>([]);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [type, setType] = useState<TxType>("x");
+  const [rememberedType, setRememberedType] = useState<TxType>("x");
+  const [rememberedAccount, setRememberedAccount] = useState("a1");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(todayISO);
+  const [category, setCategory] = useState("Ăn uống");
+  const [sub, setSub] = useState("");
+  const [accountId, setAccountId] = useState("a1");
+  const [toAccountId, setToAccountId] = useState("a2");
+  const [note, setNote] = useState("");
+  const formRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const taps = useRef<number[]>([]);
+  const saveErrorRef = useRef(saveError);
+  saveErrorRef.current = saveError;
 
-function Shell() {
-  const [view, setView] = useState<View>(() => readView());
+  function commit(next: AppData) {
+    dataRef.current = next;
+    setData(next);
+    setSaveError(saveAppData(next));
+  }
+
+  function push(dialog: Dialog) {
+    setDialogs((list) => [...list, dialog]);
+  }
+
+  function pop() {
+    setDialogs((list) => list.slice(0, -1));
+  }
+
+  function apply(result: Result) {
+    if (!result.ok) {
+      push({ kind: "msg", text: result.error });
+      return;
+    }
+    commit(result.data);
+  }
 
   useEffect(() => {
-    const sync = () => setView(readView());
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
+    if (!saveErrorRef.current) {
+      const error = saveAppData(dataRef.current);
+      if (error) setSaveError(error);
+    }
+    void navigator.storage?.persist?.();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "t") {
+        event.preventDefault();
+        setDialogs((list) => [...list, { kind: "source" }]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  useEffect(() => {
-    const titles: Record<View, string> = {
-      overview: "Tổng quan",
-      accounts: "Tài khoản",
-      categories: "Danh mục",
-      history: "Lịch sử",
-    };
-    document.title = `${titles[view]} · Sổ nhà`;
-    window.scrollTo(0, 0);
-  }, [view]);
+  function blank(nextType: TxType, nextAccount: string, book: AppData) {
+    setEditing(null);
+    setType(nextType);
+    setAmount("");
+    setDate(todayISO());
+    setNote("");
+    const names = nextType === "p" ? [] : listOf(book, nextType === "t" ? "income" : "expense").map((item) => item.name);
+    setCategory(names[0] ?? "");
+    setSub("");
+    const account = book.accounts.some((item) => item.id === nextAccount) ? nextAccount : (book.accounts[0]?.id ?? "");
+    setAccountId(account);
+    setToAccountId((book.accounts.find((item) => item.kind === "cr") ?? book.accounts[0])?.id ?? "");
+  }
 
-  const navigate = (next: View) => {
-    const hash = `#${next}`;
-    if (window.location.hash !== hash) window.location.hash = next;
-    else setView(next);
-  };
+  function chooseType(next: TxType) {
+    setType(next);
+    if (editing === null) setRememberedType(next);
+    if (next === "p") return;
+    const flow: Flow = next === "t" ? "income" : "expense";
+    const names = listOf(dataRef.current, flow).map((item) => item.name);
+    const picked = names.includes(category) ? category : (names[0] ?? "");
+    const parent = listOf(dataRef.current, flow).find((item) => item.name === picked);
+    setCategory(picked);
+    setSub(parent?.subs.includes(sub) ? sub : "");
+  }
+
+  function beginEdit(tx: Transaction) {
+    setEditing(tx.id);
+    setType(tx.type);
+    setAmount(String(tx.amount));
+    setDate(tx.date);
+    setCategory(tx.category);
+    setSub(tx.sub ?? "");
+    setAccountId(tx.accountId);
+    setToAccountId(tx.toAccountId || (dataRef.current.accounts.find((item) => item.kind === "cr") ?? dataRef.current.accounts[0])?.id || "");
+    setNote(tx.note ?? "");
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function onSave() {
+    const result = saveTransaction(dataRef.current, {
+      id: editing ?? undefined,
+      type,
+      amountText: amount,
+      date,
+      category,
+      sub,
+      accountId,
+      toAccountId,
+      note,
+    });
+    if (!result.ok) {
+      push({ kind: "msg", text: result.error });
+      return;
+    }
+    const nextType = editing === null ? type : rememberedType;
+    setRememberedAccount(accountId);
+    commit(result.data);
+    setMonth(date.slice(0, 7));
+    blank(nextType, accountId, result.data);
+  }
+
+  function move(id: number, direction: -1 | 1) {
+    const current = dataRef.current;
+    commit({ ...current, transactions: moveWithinDay(current.transactions, id, direction) });
+  }
+
+  async function backup() {
+    const payload = JSON.stringify(dataRef.current, null, 2);
+    const blob = new Blob([payload], { type: "application/json" });
+    const filename = `thu-chi-backup-${todayISO()}.json`;
+    const file = new File([blob], filename, { type: "application/json" });
+    if (canShareFile(file)) {
+      try {
+        await navigator.share({ files: [file], title: "Sao lưu Thu Chi Gia Đình" });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        downloadBlob(blob, filename);
+      }
+    } else {
+      downloadBlob(blob, filename);
+    }
+    commit({ ...dataRef.current, lastBackup: todayISO() });
+  }
+
+  async function onRestoreFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const next = normalize(JSON.parse(await file.text()) as unknown);
+      if (!next) {
+        push({ kind: "msg", text: "File không đúng định dạng sổ thu chi." });
+        return;
+      }
+      push({
+        kind: "yes",
+        text: "Khôi phục sẽ ghi đè sổ hiện tại. Bản đang dùng được giữ lại để hoàn tác.",
+        onYes: () => {
+          saveUndo(dataRef.current);
+          setHasUndo(true);
+          commit(next);
+          blank(rememberedType, rememberedAccount, next);
+        },
+      });
+    } catch {
+      push({ kind: "msg", text: "Không đọc được file." });
+    }
+  }
+
+  async function exportPdf() {
+    try {
+      const { buildPdf } = await import("./pdf");
+      const font = await loadFont();
+      const blob = await buildPdf(dataRef.current, month, font);
+      const filename = `thu-chi-${month}.pdf`;
+      const file = new File([blob], filename, { type: "application/pdf" });
+      if (canShareFile(file)) {
+        try {
+          await navigator.share({ files: [file], title: filename });
+          return;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+        }
+      }
+      downloadBlob(blob, filename);
+    } catch {
+      push({ kind: "msg", text: "Không xuất được PDF." });
+    }
+  }
+
+  function onTitle() {
+    const now = Date.now();
+    taps.current = taps.current.filter((time) => now - time < 600);
+    taps.current.push(now);
+    if (taps.current.length >= 3) {
+      taps.current = [];
+      push({ kind: "source" });
+    }
+  }
+
+  const totals = monthTotals(data.transactions, month);
+  const snapshots = accountSnapshots(data);
+  const spends = categorySpend(data, month);
+  const rows = screenOrder(data.transactions, month);
+  const colors = allCategories(data);
+  const age = backupAgeDays(data.lastBackup, todayISO());
+  const flow: Flow | null = type === "t" ? "income" : type === "x" ? "expense" : null;
+  const parents = flow ? listOf(data, flow) : [];
+  const categoryOptions = parents.map((item) => item.name);
+  if (category && flow && !categoryOptions.includes(category)) categoryOptions.push(category);
+  const parent = parents.find((item) => item.name === category);
+  const subOptions = [...(parent?.subs ?? [])];
+  if (sub && !subOptions.includes(sub)) subOptions.push(sub);
+  const accountLabel = type === "t" ? "Vào tài khoản" : type === "x" ? "Chi từ tài khoản" : "Từ tài khoản";
 
   return (
-    <NavigateProvider value={navigate}>
-      <div className="app">
-        <a className="skip" href="#content">
-          Đến nội dung
-        </a>
-        <Sidebar view={view} />
-        <div className="workspace">
-          <MobileBar />
-          <main id="content">
-            {view === "overview" && <OverviewPage />}
-            {view === "accounts" && <AccountsPage />}
-            {view === "categories" && <CategoriesPage />}
-            {view === "history" && <HistoryPage />}
-          </main>
+    <div className="page">
+      <header>
+        <div className="top">
+          <h1 onClick={onTitle}>💰 Thu Chi Gia Đình</h1>
+          <div>
+            <button type="button" className="ib" onClick={() => push({ kind: "accounts" })}>🏦 Tài khoản</button>
+            <button type="button" className="ib" onClick={() => push({ kind: "cats", flow: "expense" })}>⚙ Danh mục</button>
+            <button type="button" className="ib" onClick={() => push({ kind: "budgets" })}>🎯 Ngân sách</button>
+            <button type="button" className="ib" onClick={() => push({ kind: "help" })}>❓ Hướng dẫn</button>
+          </div>
         </div>
-        <BottomNav view={view} />
-      </div>
-    </NavigateProvider>
-  );
-}
-
-function Sidebar({ view }: { view: View }) {
-  const go = useGo();
-  const { state } = useLedger();
-  const month = currentMonth();
-  const flow = monthFlow(state.entries, month);
-
-  return (
-    <aside className="sidebar">
-      <div className="brand">
-        <span className="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="28" height="28">
-            <rect x="6" y="4" width="20" height="24" rx="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
-            <path d="M11 12h10M11 17h10M11 22h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          </svg>
-        </span>
-        <span>
-          <strong>Sổ nhà</strong>
-          <small>Thu chi gia đình</small>
-        </span>
-      </div>
-      <nav className="nav" aria-label="Mục chính">
-        {VIEWS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={view === item.id ? "nav-btn active" : "nav-btn"}
-            aria-current={view === item.id ? "page" : undefined}
-            onClick={() => go(item.id)}
-          >
-            <NavIcon name={item.id} />
-            {item.label}
+        <div className="status" role="status">{saveError ? `⚠ ${saveError}` : `☁ Đã lưu${data.lastBackup ? ` · sao lưu ${formatFullDay(data.lastBackup)}` : ""}`}</div>
+        <div className="mn">
+          <button type="button" aria-label="Tháng trước" onClick={() => setMonth((value) => shiftMonth(value, -1))}>◀</button>
+          <b>{monthLabel(month)}</b>
+          <button type="button" aria-label="Tháng sau" onClick={() => setMonth((value) => shiftMonth(value, 1))}>▶</button>
+        </div>
+      </header>
+      <main>
+        {(age === null || age >= 30) && (
+          <button type="button" className="banner" onClick={() => void backup()}>
+            {age === null ? "Chưa sao lưu lần nào — Sao lưu ngay" : `Đã ${age} ngày chưa sao lưu — Sao lưu ngay`}
           </button>
-        ))}
-      </nav>
-      <div className="side-pulse">
-        <span>{formatMonth(month)}</span>
-        <p>
-          <small>Thu</small>
-          <strong>{formatVnd(flow.income)}</strong>
-        </p>
-        <p>
-          <small>Chi</small>
-          <strong>{formatVnd(flow.expense)}</strong>
-        </p>
-      </div>
-    </aside>
-  );
-}
-
-function MobileBar() {
-  return (
-    <div className="mobile-bar">
-      <strong>Sổ nhà</strong>
-      <span>Thu chi gia đình</span>
+        )}
+        {hasUndo && (
+          <div className="undo-bar">
+            <span>Đã khôi phục. Có thể quay lại sổ trước đó.</span>
+            <button type="button" onClick={() => {
+              const previous = loadUndo();
+              saveUndo(null);
+              setHasUndo(false);
+              if (previous) {
+                commit(previous);
+                blank(rememberedType, rememberedAccount, previous);
+              }
+            }}>Hoàn tác</button>
+            <button type="button" onClick={() => { saveUndo(null); setHasUndo(false); }}>Giữ bản này</button>
+          </div>
+        )}
+        <div className="grid">
+          <div className="c thu"><small>Tổng thu</small><div className="v">{formatVnd(totals.income)}</div></div>
+          <div className="c chi"><small>Tổng chi</small><div className="v">{formatVnd(totals.expense)}</div></div>
+          <div className={`c ${totals.left < 0 ? "bad" : "ok"}`}><small>Còn lại</small><div className="v">{totals.left < 0 ? "⚠ " : ""}{formatVnd(totals.left)}</div></div>
+          <div className={`c ${toneClass(totals.tone)}`}><small>Chi / Thu</small><div className="v">{totals.ratioText}{totals.ratioNote}</div></div>
+        </div>
+        <div className="grid gap">
+          {snapshots.map((snapshot) => (
+            <div key={snapshot.account.id} className={`c ${toneClass(snapshot.tone)}`}>
+              <small>{KIND_ICON[snapshot.account.kind]} {snapshot.account.name}{snapshot.account.kind === "cr" ? " · khả dụng" : ""}</small>
+              <div className="v">{primaryText(snapshot)}</div>
+              {snapshot.debt !== null && (
+                <small>Dư nợ {formatVnd(snapshot.debt)}{snapshot.account.limit ? ` / ${formatVnd(snapshot.account.limit)}` : ""}</small>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="c fm gap" id="fm" ref={formRef}>
+          <h3>{editing === null ? "Thêm giao dịch" : "Sửa giao dịch"}</h3>
+          <div className="seg three">
+            <button type="button" className={type === "t" ? "on t" : "t"} onClick={() => chooseType("t")}>Thu</button>
+            <button type="button" className={type === "x" ? "on x" : "x"} onClick={() => chooseType("x")}>Chi</button>
+            <button type="button" className={type === "p" ? "on p" : "p"} onClick={() => chooseType("p")}>Chuyển</button>
+          </div>
+          <div className="g2">
+            <div>
+              <label>Số tiền (vd: 50k, 1.5tr)</label>
+              <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
+            </div>
+            <div>
+              <label>Ngày</label>
+              <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+            </div>
+          </div>
+          {type !== "p" && (
+            <div className="g2">
+              <div>
+                <label>Danh mục</label>
+                <select value={category} onChange={(event) => {
+                  const value = event.target.value;
+                  if (value !== "__new__") {
+                    setCategory(value);
+                    setSub("");
+                    return;
+                  }
+                  const currentFlow: Flow = type === "t" ? "income" : "expense";
+                  push({
+                    kind: "ask",
+                    title: "Tên danh mục mới",
+                    onOk: (name) => {
+                      const trimmed = name.trim();
+                      if (!trimmed) return;
+                      const result = addCategory(dataRef.current, currentFlow, trimmed);
+                      if (!result.ok) {
+                        push({ kind: "msg", text: result.error });
+                        return;
+                      }
+                      commit(result.data);
+                      setCategory(trimmed);
+                      setSub("");
+                    },
+                  });
+                }}>
+                  {categoryOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                  <option value="__new__">＋ Thêm danh mục mới…</option>
+                </select>
+              </div>
+              <div>
+                <label>Danh mục con</label>
+                <select value={sub} onChange={(event) => {
+                  const value = event.target.value;
+                  if (value !== "__new__") {
+                    setSub(value);
+                    return;
+                  }
+                  const currentFlow: Flow = type === "t" ? "income" : "expense";
+                  const parentName = category;
+                  push({
+                    kind: "ask",
+                    title: "Tên danh mục con",
+                    onOk: (name) => {
+                      const trimmed = name.trim();
+                      if (!trimmed) return;
+                      const result = addSub(dataRef.current, currentFlow, parentName, trimmed);
+                      if (!result.ok) {
+                        push({ kind: "msg", text: result.error });
+                        return;
+                      }
+                      commit(result.data);
+                      setSub(trimmed);
+                    },
+                  });
+                }}>
+                  <option value="">— không —</option>
+                  {subOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                  <option value="__new__">＋ Thêm danh mục con…</option>
+                </select>
+              </div>
+            </div>
+          )}
+          <div className="g2">
+            <div>
+              <label>{accountLabel}</label>
+              <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+                {data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+              </select>
+            </div>
+            {type === "p" && (
+              <div>
+                <label>Đến tài khoản</label>
+                <select value={toAccountId} onChange={(event) => setToAccountId(event.target.value)}>
+                  {data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+          <label>Ghi chú</label>
+          <input value={note} onChange={(event) => setNote(event.target.value)} />
+          <div className="btns">
+            <button type="button" className="b2" onClick={() => blank(rememberedType, rememberedAccount, dataRef.current)}>{editing === null ? "Làm mới" : "Hủy sửa"}</button>
+            {editing !== null && (
+              <button type="button" className="b3" onClick={() => {
+                const id = editing;
+                push({
+                  kind: "yes",
+                  text: "Xóa giao dịch này?",
+                  onYes: () => {
+                    const next = deleteTransaction(dataRef.current, id);
+                    commit(next);
+                    blank(rememberedType, rememberedAccount, next);
+                  },
+                });
+              }}>Xóa</button>
+            )}
+            <button type="button" className="b1" onClick={onSave}>Lưu</button>
+          </div>
+        </div>
+        <h2>Chi theo danh mục</h2>
+        <div className="list">
+          {spends.length === 0 && <div className="empty">Chưa có khoản chi</div>}
+          {spends.map((row) => (
+            <div key={row.name} className={`cat ${row.tone === "bad" ? "ov" : ""}`}>
+              <div className="h">
+                <b>
+                  <i className="dot" style={{ background: categoryColor(colors, row.name) }} />
+                  {row.name}
+                  {row.tag && <span className={`tag ${row.tag === "VƯỢT" ? "ov" : "w"}`}>{row.tag}</span>}
+                </b>
+                <span className="amt x">{formatVnd(row.total)}</span>
+              </div>
+              {row.caption && <small>{row.caption}</small>}
+              <div className={`bar ${row.tone === "bad" ? "ov" : row.tone === "warn" ? "wr2" : ""}`}>
+                <i style={{ width: `${Math.min(100, row.percent)}%` }} />
+              </div>
+              {row.subs.map((child) => (
+                <div key={child.name} className="sc"><span>↳ {child.name}</span><span>{formatVnd(child.total)}</span></div>
+              ))}
+            </div>
+          ))}
+        </div>
+        <h2>Giao dịch trong tháng</h2>
+        <div className="list">
+          {rows.length === 0 && <div className="empty">Chưa có giao dịch. Nhập ở form phía trên.</div>}
+          {rows.map((tx) => (
+            <div key={tx.id} className="row" style={{ borderLeft: `4px solid ${tx.type === "p" ? "var(--pri)" : categoryColor(colors, tx.category)}` }} onClick={() => beginEdit(tx)}>
+              <div className="l">
+                <b>{tx.category}{tx.sub ? ` › ${tx.sub}` : ""}</b>
+                <small>
+                  {formatDay(tx.date)} · {accountName(data, tx.accountId)}
+                  {tx.type === "p" ? ` → ${accountName(data, tx.toAccountId)}` : ""}
+                  {tx.note ? ` · ${tx.note}` : ""}
+                </small>
+              </div>
+              <span className={`amt ${tx.type}`}>{tx.type === "t" ? "+" : tx.type === "p" ? "⇄ " : "−"}{formatVnd(tx.amount)}</span>
+              <span className="mv">
+                <button type="button" aria-label="Đưa lên" onClick={(event) => { event.stopPropagation(); move(tx.id, -1); }}>▲</button>
+                <button type="button" aria-label="Đưa xuống" onClick={(event) => { event.stopPropagation(); move(tx.id, 1); }}>▼</button>
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="tools">
+          <button type="button" onClick={() => void backup()}>Sao lưu</button>
+          <button type="button" onClick={() => fileRef.current?.click()}>Khôi phục</button>
+          <button type="button" onClick={() => void exportPdf()}>📄 Xuất PDF</button>
+          <input ref={fileRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void onRestoreFile(event)} />
+        </div>
+      </main>
+      {dialogs.map((dialog, index) => (
+        <Sheet key={index} onClose={pop}>
+          {dialog.kind === "msg" && (
+            <>
+              <h3>{dialog.text}</h3>
+              <div className="btns"><button type="button" className="b1" onClick={pop}>OK</button></div>
+            </>
+          )}
+          {dialog.kind === "yes" && (
+            <>
+              <h3>{dialog.text}</h3>
+              <div className="btns">
+                <button type="button" className="b2" onClick={pop}>Không</button>
+                <button type="button" className="b3" onClick={() => { pop(); dialog.onYes(); }}>Đồng ý</button>
+              </div>
+            </>
+          )}
+          {dialog.kind === "ask" && <AskDialog title={dialog.title} onCancel={pop} onOk={(value) => { pop(); dialog.onOk(value); }} />}
+          {dialog.kind === "accounts" && (
+            <AccountsSheet
+              data={data}
+              onClose={pop}
+              onAdd={() => push({ kind: "account" })}
+              onEdit={(id) => push({ kind: "account", id })}
+            />
+          )}
+          {dialog.kind === "account" && (
+            <AccountForm
+              initial={data.accounts.find((account) => account.id === dialog.id)}
+              onCancel={pop}
+              onSave={(input) => {
+                const result = saveAccount(dataRef.current, input);
+                if (!result.ok) {
+                  push({ kind: "msg", text: result.error });
+                  return;
+                }
+                commit(result.data);
+                pop();
+              }}
+              onDelete={dialog.id ? () => {
+                const id = dialog.id;
+                if (!id) return;
+                const blocked = deleteAccount(dataRef.current, id);
+                if (!blocked.ok) {
+                  push({ kind: "msg", text: blocked.error });
+                  return;
+                }
+                const name = dataRef.current.accounts.find((account) => account.id === id)?.name ?? "";
+                push({
+                  kind: "yes",
+                  text: `Xóa tài khoản "${name}"?`,
+                  onYes: () => {
+                    const removed = deleteAccount(dataRef.current, id);
+                    if (!removed.ok) {
+                      push({ kind: "msg", text: removed.error });
+                      return;
+                    }
+                    commit(removed.data);
+                    pop();
+                  },
+                });
+              } : undefined}
+            />
+          )}
+          {dialog.kind === "cats" && (
+            <CategorySheet
+              data={data}
+              flow={dialog.flow}
+              onFlow={(next) => setDialogs((list) => list.map((item, itemIndex) => itemIndex === index && item.kind === "cats" ? { ...item, flow: next } : item))}
+              onClose={pop}
+              onApply={apply}
+              onCommit={commit}
+              onColor={(name, color) => commit(setCategoryColor(dataRef.current, dialog.flow, name, color))}
+              onAsk={(title, onOk) => push({ kind: "ask", title, onOk })}
+              onYes={(text, onYes) => push({ kind: "yes", text, onYes })}
+            />
+          )}
+          {dialog.kind === "budgets" && (
+            <BudgetForm
+              names={data.categories.expense.map((item) => item.name)}
+              budgets={data.budgets}
+              onCancel={pop}
+              onSave={(texts) => {
+                const result = saveBudgets(dataRef.current, texts);
+                if (!result.ok) {
+                  push({ kind: "msg", text: result.error });
+                  return;
+                }
+                commit(result.data);
+                pop();
+              }}
+            />
+          )}
+          {dialog.kind === "help" && (
+            <>
+              <h3>❓ Hướng dẫn</h3>
+              <div className="gd">
+                {HELP.map((item) => <p key={item.title}>• <b>{item.title}</b>: {item.body}</p>)}
+              </div>
+              <div className="btns"><button type="button" className="b1" onClick={pop}>Đóng</button></div>
+            </>
+          )}
+          {dialog.kind === "source" && (
+            <>
+              <h3>📄 Mã nguồn</h3>
+              <pre>{SOURCE}</pre>
+              <div className="btns"><button type="button" className="b1" onClick={pop}>Đóng</button></div>
+            </>
+          )}
+        </Sheet>
+      ))}
     </div>
   );
 }
 
-function BottomNav({ view }: { view: View }) {
-  const go = useGo();
+function Sheet({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
-    <nav className="bottom-nav" aria-label="Mục chính">
-      {VIEWS.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          className={view === item.id ? "active" : undefined}
-          aria-current={view === item.id ? "page" : undefined}
-          onClick={() => go(item.id)}
-        >
-          <NavIcon name={item.id} />
-          {item.label}
-        </button>
-      ))}
-    </nav>
+    <div className="ov-bg" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="sh" role="dialog">{children}</div>
+    </div>
   );
 }
 
-function NavIcon({ name }: { name: View }) {
-  const common = {
-    viewBox: "0 0 24 24",
-    width: 18,
-    height: 18,
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.8,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true,
-  };
-  if (name === "overview") {
-    return (
-      <svg {...common}>
-        <path d="M4 11.5 12 4l8 7.5" />
-        <path d="M7 10.5V20h10v-9.5" />
-      </svg>
-    );
-  }
-  if (name === "accounts") {
-    return (
-      <svg {...common}>
-        <rect x="3" y="6" width="18" height="12" rx="2" />
-        <path d="M3 10h18" />
-      </svg>
-    );
-  }
-  if (name === "categories") {
-    return (
-      <svg {...common}>
-        <circle cx="12" cy="12" r="8" />
-        <circle cx="12" cy="12" r="3" />
-      </svg>
-    );
-  }
+function AskDialog({ title, onCancel, onOk }: { title: string; onCancel: () => void; onOk: (value: string) => void }) {
+  const [value, setValue] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { ref.current?.focus(); }, []);
   return (
-    <svg {...common}>
-      <path d="M8 6h11M8 12h11M8 18h11" />
-      <path d="M4 6h.01M4 12h.01M4 18h.01" />
-    </svg>
+    <>
+      <h3>{title}</h3>
+      <input ref={ref} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") onOk(value); }} />
+      <div className="btns">
+        <button type="button" className="b2" onClick={onCancel}>Hủy</button>
+        <button type="button" className="b1" onClick={() => onOk(value)}>OK</button>
+      </div>
+    </>
   );
+}
+
+function AccountsSheet({ data, onClose, onAdd, onEdit }: { data: AppData; onClose: () => void; onAdd: () => void; onEdit: (id: string) => void }) {
+  const snapshots = accountSnapshots(data);
+  return (
+    <>
+      <h3>🏦 Tài khoản / nguồn tiền</h3>
+      <div className="list">
+        {snapshots.length === 0 && <div className="empty">Chưa có tài khoản</div>}
+        {snapshots.map((snapshot) => (
+          <button type="button" key={snapshot.account.id} className="row" onClick={() => onEdit(snapshot.account.id)}>
+            <div className="l">
+              <b>{KIND_ICON[snapshot.account.kind]} {snapshot.account.name}</b>
+              <small>{snapshot.account.kind === "cr" ? "Khả dụng " : "Số dư "}{snapshot.primary || formatVnd(snapshot.available)}</small>
+            </div>
+            <span>✏</span>
+          </button>
+        ))}
+      </div>
+      <div className="btns">
+        <button type="button" className="b2" onClick={onClose}>Đóng</button>
+        <button type="button" className="b1" onClick={onAdd}>＋ Tài khoản</button>
+      </div>
+    </>
+  );
+}
+
+function AccountForm({ initial, onCancel, onSave, onDelete }: { initial?: Account; onCancel: () => void; onSave: (input: AccountInput) => void; onDelete?: () => void }) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [kind, setKind] = useState<AccountKind>(initial?.kind ?? "bank");
+  const [opening, setOpening] = useState(initial?.opening ? String(initial.opening) : "");
+  const [limit, setLimit] = useState(initial?.limit ? String(initial.limit) : "");
+  return (
+    <>
+      <h3>{initial ? "Sửa tài khoản" : "Thêm tài khoản"}</h3>
+      <label>Tên</label>
+      <input value={name} onChange={(event) => setName(event.target.value)} />
+      <label>Loại</label>
+      <select value={kind} onChange={(event) => setKind(event.target.value as AccountKind)}>
+        <option value="bank">🏦 Ngân hàng</option>
+        <option value="ew">📱 Ví điện tử</option>
+        <option value="cash">💵 Tiền mặt</option>
+        <option value="cr">💳 Thẻ tín dụng</option>
+      </select>
+      <label>{kind === "cr" ? "Dư nợ ban đầu (đã chi, chưa trả)" : "Số dư ban đầu"}</label>
+      <input inputMode="decimal" value={opening} onChange={(event) => setOpening(event.target.value)} />
+      {kind === "cr" && (
+        <>
+          <label>Hạn mức</label>
+          <input inputMode="decimal" value={limit} onChange={(event) => setLimit(event.target.value)} />
+        </>
+      )}
+      <div className="btns">
+        <button type="button" className="b2" onClick={onCancel}>Hủy</button>
+        {onDelete && <button type="button" className="b3" onClick={onDelete}>Xóa</button>}
+        <button type="button" className="b1" onClick={() => onSave({ id: initial?.id, name, kind, openingText: opening, limitText: limit })}>Lưu</button>
+      </div>
+    </>
+  );
+}
+
+function CategorySheet({ data, flow, onFlow, onClose, onApply, onCommit, onColor, onAsk, onYes }: {
+  data: AppData;
+  flow: Flow;
+  onFlow: (flow: Flow) => void;
+  onClose: () => void;
+  onApply: (result: Result) => void;
+  onCommit: (data: AppData) => void;
+  onColor: (name: string, color: string) => void;
+  onAsk: (title: string, onOk: (value: string) => void) => void;
+  onYes: (text: string, onYes: () => void) => void;
+}) {
+  const categories = listOf(data, flow);
+  return (
+    <>
+      <h3>⚙ Danh mục</h3>
+      <div className="seg">
+        <button type="button" className={flow === "income" ? "on t" : "t"} onClick={() => onFlow("income")}>Thu</button>
+        <button type="button" className={flow === "expense" ? "on x" : "x"} onClick={() => onFlow("expense")}>Chi</button>
+      </div>
+      <div className="list gap">
+        {categories.length === 0 && <div className="empty">Chưa có danh mục</div>}
+        {categories.map((item) => (
+          <div key={item.name} className="cat">
+            <div className="h">
+              <b>
+                <input
+                  className="cc"
+                  type="color"
+                  aria-label={`Màu ${item.name}`}
+                  value={item.color || categoryColor(categories, item.name)}
+                  onChange={(event) => onColor(item.name, event.target.value)}
+                />
+                {" "}{item.name}
+              </b>
+              <span className="actions">
+                <button type="button" className="sm" onClick={() => onAsk(`Tên danh mục con của "${item.name}"`, (name) => { if (name.trim()) onApply(addSub(data, flow, item.name, name)); })}>＋ con</button>
+                <button type="button" className="sm" onClick={() => onAsk("Đổi tên danh mục", (name) => { if (name.trim()) onApply(renameCategory(data, flow, item.name, name)); })}>✏</button>
+                <button type="button" className="sm" onClick={() => onYes(`Xóa danh mục "${item.name}"? Các giao dịch cũ vẫn giữ nguyên tên này.`, () => onCommit(deleteCategory(data, flow, item.name)))}>🗑</button>
+              </span>
+            </div>
+            {item.subs.map((child) => (
+              <div key={child} className="sc">
+                <span>↳ {child}</span>
+                <span className="actions">
+                  <button type="button" className="sm" onClick={() => onAsk("Đổi tên danh mục con", (name) => { if (name.trim()) onApply(renameSub(data, flow, item.name, child, name)); })}>✏</button>
+                  <button type="button" className="sm" onClick={() => onYes(`Xóa danh mục con "${child}"?`, () => onCommit(deleteSub(data, flow, item.name, child)))}>🗑</button>
+                </span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="btns">
+        <button type="button" className="b2" onClick={onClose}>Đóng</button>
+        <button type="button" className="b1" onClick={() => onAsk("Tên danh mục mới", (name) => { if (name.trim()) onApply(addCategory(data, flow, name)); })}>＋ Danh mục</button>
+      </div>
+    </>
+  );
+}
+
+function BudgetForm({ names, budgets, onCancel, onSave }: { names: string[]; budgets: Record<string, number>; onCancel: () => void; onSave: (texts: Record<string, string>) => void }) {
+  const [texts, setTexts] = useState<Record<string, string>>(() => Object.fromEntries(names.map((name) => [name, budgets[name] ? String(budgets[name]) : ""])));
+  return (
+    <>
+      <h3>🎯 Ngân sách tháng theo danh mục</h3>
+      <small className="hint">Để trống hoặc 0 = không giới hạn. Vượt ngân sách sẽ bị tô đỏ.</small>
+      {names.map((name) => (
+        <div key={name}>
+          <label>{name}</label>
+          <input inputMode="decimal" value={texts[name] ?? ""} onChange={(event) => setTexts((current) => ({ ...current, [name]: event.target.value }))} />
+        </div>
+      ))}
+      <div className="btns">
+        <button type="button" className="b2" onClick={onCancel}>Đóng</button>
+        <button type="button" className="b1" onClick={() => onSave(texts)}>Lưu</button>
+      </div>
+    </>
+  );
+}
+
+function toneClass(tone: Tone): string {
+  if (tone === "bad") return "bad";
+  if (tone === "warn") return "wr";
+  if (tone === "ok") return "ok";
+  return "";
+}
+
+function primaryText(snapshot: AccountSnapshot): string {
+  if (snapshot.primary) return snapshot.primary;
+  return `${snapshot.showWarning ? "⚠ " : ""}${formatVnd(snapshot.available)}`;
+}
+
+function accountName(data: AppData, id: string | undefined): string {
+  return data.accounts.find((account) => account.id === id)?.name ?? "?";
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function canShareFile(file: File): boolean {
+  try {
+    return !!navigator.canShare?.({ files: [file] });
+  } catch {
+    return false;
+  }
+}
+
+let fontTask: Promise<string> | null = null;
+
+function loadFont(): Promise<string> {
+  fontTask ??= fetch(fontUrl)
+    .then((response) => {
+      if (!response.ok) throw new Error("font");
+      return response.arrayBuffer();
+    })
+    .then((buffer) => bytesToBase64(new Uint8Array(buffer)))
+    .catch((error: unknown) => {
+      fontTask = null;
+      throw error;
+    });
+  return fontTask;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
 }

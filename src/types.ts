@@ -1,97 +1,44 @@
-export type AccountKind = "bank" | "credit" | "ewallet";
+export type AccountKind = "bank" | "ew" | "cash" | "cr";
+export type TxType = "t" | "x" | "p";
 export type Flow = "income" | "expense";
-export type EntryKind = "income" | "expense" | "adjustment" | "transfer";
 
 export interface Account {
   id: string;
   name: string;
   kind: AccountKind;
-  institution: string;
-  /** Ngân hàng và ví: tiền đang có. Thẻ: dư nợ (số dương là đang nợ). */
-  balance: number;
-  creditLimit: number | null;
-  color: string;
-  note: string;
-  createdAt: string;
+  /** bank/ew/cash: số dư ban đầu. cr: dư nợ ban đầu. */
+  opening: number;
+  /** Chỉ thẻ tín dụng. 0 hoặc thiếu = chưa đặt hạn mức. */
+  limit?: number;
 }
 
 export interface Category {
-  id: string;
   name: string;
-  flow: Flow;
-  color: string;
-  parentId: string | null;
-  createdAt: string;
+  subs: string[];
+  color?: string;
 }
 
-export interface Entry {
-  id: string;
-  kind: EntryKind;
-  amount: number;
-  accountId: string;
-  accountName: string;
-  counterAccountId: string | null;
-  counterAccountName: string | null;
-  categoryId: string | null;
-  categoryName: string | null;
-  categoryColor: string | null;
-  note: string;
+export interface Transaction {
+  id: number;
+  type: TxType;
   date: string;
-  createdAt: string;
-  balanceBefore: number | null;
-  balanceAfter: number | null;
+  amount: number;
+  category: string;
+  sub?: string;
+  accountId: string;
+  toAccountId?: string;
+  note?: string;
+  /** Thứ tự trong cùng ngày. Thiếu thì lấy id. Số lớn hơn hiện phía trên. */
+  order?: number;
 }
 
-export interface State {
-  version: 1;
+export interface AppData {
+  version: 2;
+  categories: { income: Category[]; expense: Category[] };
+  budgets: Record<string, number>;
   accounts: Account[];
-  categories: Category[];
-  entries: Entry[];
+  transactions: Transaction[];
+  lastBackup?: string;
 }
 
-export interface NewAccountInput {
-  name: string;
-  kind: AccountKind;
-  institution: string;
-  color: string;
-  note: string;
-  openingBalance: number;
-  creditLimit: number | null;
-  date: string;
-}
-
-export interface AccountPatch {
-  id: string;
-  name: string;
-  institution: string;
-  color: string;
-  note: string;
-  creditLimit: number | null;
-}
-
-export interface AdjustInput {
-  accountId: string;
-  nextBalance: number;
-  date: string;
-  note: string;
-  entryId?: string;
-}
-
-export interface CategoryInput {
-  id?: string;
-  name: string;
-  flow: Flow;
-  color: string;
-  parentId: string | null;
-}
-
-export interface EntryInput {
-  id?: string;
-  kind: "income" | "expense" | "transfer";
-  amount: number;
-  date: string;
-  accountId: string;
-  counterAccountId?: string | null;
-  categoryId?: string | null;
-  note: string;
-}
+export type Tone = "ok" | "warn" | "bad" | "none";
