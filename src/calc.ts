@@ -86,6 +86,13 @@ export interface MonthPoint {
   left: number;
 }
 
+export interface DayPoint {
+  date: string;
+  income: number;
+  expense: number;
+  left: number;
+}
+
 const MONTH_LIMIT = 48;
 
 /** Các tháng từ `from` đến `to`, kể cả hai đầu. Đảo đầu cuối vẫn đọc được. Quá 4 năm thì giữ 48 tháng gần cuối. */
@@ -112,6 +119,29 @@ export function monthSeries(transactions: Transaction[], from: string, to: strin
     return { month, income: totals.income, expense: totals.expense, left: totals.left };
   });
   return { points, truncated: span.truncated };
+}
+
+/** Mỗi ngày trong tháng, kể cả ngày không có giao dịch. Chuyển khoản không tính. */
+export function daySeries(transactions: Transaction[], month: string): DayPoint[] {
+  if (!isMonth(month)) return [];
+  const [year, mon] = month.split("-").map(Number);
+  const count = new Date(year, mon, 0).getDate();
+  const income = new Map<string, number>();
+  const expense = new Map<string, number>();
+  const prefix = `${month}-`;
+  for (const tx of transactions) {
+    if (!tx.date.startsWith(prefix)) continue;
+    if (tx.type === "t") income.set(tx.date, (income.get(tx.date) ?? 0) + tx.amount);
+    else if (tx.type === "x") expense.set(tx.date, (expense.get(tx.date) ?? 0) + tx.amount);
+  }
+  const points: DayPoint[] = [];
+  for (let day = 1; day <= count; day += 1) {
+    const date = `${month}-${String(day).padStart(2, "0")}`;
+    const inn = income.get(date) ?? 0;
+    const out = expense.get(date) ?? 0;
+    points.push({ date, income: inn, expense: out, left: inn - out });
+  }
+  return points;
 }
 
 function isMonth(value: string): boolean {
