@@ -31,7 +31,7 @@ import {
 } from "./mutate";
 import { normalize } from "./migrate";
 import { SOURCE } from "./source";
-import { loadAppData, loadUndo, saveAppData, saveUndo } from "./storage";
+import { currentRevision, loadAppData, loadMirror, loadUndo, mirrorCurrent, rememberRevision, saveAppData, saveUndo } from "./storage";
 import type { Account, AccountKind, AppData, Flow, Tone, Transaction, TxType } from "./types";
 
 const KIND_ICON: Record<AccountKind, string> = { bank: "🏦", ew: "📱", cash: "💵", cr: "💳" };
@@ -48,7 +48,7 @@ const HELP: { title: string; body: string }[] = [
   { title: "Cảnh báo màu", body: "Chi/Thu từ 90% tô cam, trên 100% tô đỏ. Còn lại âm và số dư âm có dấu ⚠. Thẻ còn dưới 20% hạn mức thì cam, âm thì đỏ." },
   { title: "Xuất PDF", body: "Nút cuối trang xuất báo cáo của tháng đang xem, khổ A4, chữ tiếng Việt chọn được." },
   { title: "Dữ liệu nằm trên máy này", body: "App không gửi số liệu đi đâu và không tự đồng bộ giữa các máy. Muốn chuyển máy: bấm Sao lưu, giữ file JSON, rồi Khôi phục trên máy kia." },
-  { title: "Dữ liệu có thể mất", body: "Mất nếu xóa dữ liệu trang web, dùng chế độ riêng tư, đổi hoặc cài lại điện thoại, hoặc trên Safari không mở app khoảng 7 ngày khi chưa thêm vào Màn hình chính. Nên thêm vào Màn hình chính, luôn mở từ icon đó, và sao lưu mỗi tháng." },
+  { title: "Dữ liệu có thể mất", body: "Trên iPhone hãy luôn mở từ icon Màn hình chính. Tab Riêng tư, Zalo hoặc Facebook là sổ khác, tắt đi là mất. Safari và icon cũng là hai sổ khác nhau. Nên sao lưu file JSON mỗi tháng." },
   { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
 ];
 
@@ -71,6 +71,7 @@ export function App() {
   const [saveError, setSaveError] = useState<string | null>(loaded.error);
   const [month, setMonth] = useState(currentMonth);
   const [hasUndo, setHasUndo] = useState(() => loadUndo() !== null);
+  const [storageWarning] = useState<string | null>(() => browserWarning());
   const [showTotals, setShowTotals] = useState(() => readFlag(SHOW_TOTALS_KEY));
   const [showBalances, setShowBalances] = useState(() => readFlag(SHOW_BALANCES_KEY));
   const [dialogs, setDialogs] = useState<Dialog[]>([]);
@@ -88,6 +89,7 @@ export function App() {
   const formRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const taps = useRef<number[]>([]);
+  const mirrorChecked = useRef(false);
   const saveErrorRef = useRef(saveError);
   saveErrorRef.current = saveError;
 
@@ -114,10 +116,26 @@ export function App() {
   }
 
   useEffect(() => {
-    if (!saveErrorRef.current) {
-      const error = saveAppData(dataRef.current);
-      if (error) setSaveError(error);
-    }
+    let cancel = false;
+    void loadMirror().then((mirror) => {
+      if (cancel) return;
+      if (mirror && mirror.revision > currentRevision()) {
+        rememberRevision(mirror.revision);
+        commit(mirror.data);
+      } else if (!saveErrorRef.current) {
+        void mirrorCurrent(dataRef.current);
+      }
+      mirrorChecked.current = true;
+    });
+    const flush = () => {
+      if (!mirrorChecked.current) return;
+      saveAppData(dataRef.current);
+    };
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onHide);
     void navigator.storage?.persist?.();
     const onKey = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "t") {
@@ -126,7 +144,12 @@ export function App() {
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      cancel = true;
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   function blank(nextType: TxType, nextAccount: string, book: AppData) {
@@ -305,6 +328,7 @@ export function App() {
         </div>
       </header>
       <main>
+        {storageWarning && <div className="banner keep">{storageWarning}</div>}
         {(age === null || age >= 30) && (
           <button type="button" className="banner" onClick={() => void backup()}>
             {age === null ? "Chưa sao lưu lần nào — Sao lưu ngay" : `Đã ${age} ngày chưa sao lưu — Sao lưu ngay`}
@@ -822,6 +846,27 @@ function toggleFlag(key: string, current: boolean): boolean {
     // Máy không cho ghi thì vẫn đổi trên màn hình lần này.
   }
   return next;
+}
+
+function browserWarning(): string | null {
+  try {
+    localStorage.setItem("tcgd_probe", "1");
+    localStorage.removeItem("tcgd_probe");
+  } catch {
+    return "Máy không cho lưu sổ. Hãy tắt tab Riêng tư, mở bằng Safari, rồi thêm vào Màn hình chính.";
+  }
+  const agent = navigator.userAgent;
+  if (/Zalo|FBAN|FBAV|Instagram|Line\//.test(agent)) {
+    return "Đang mở trong ứng dụng khác. Sổ sẽ mất khi đóng. Hãy mở link bằng Safari, rồi thêm vào Màn hình chính.";
+  }
+  const ios = /iPhone|iPad|iPod/.test(agent);
+  const standalone =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  if (ios && !standalone) {
+    return "Đang mở trong Safari. Tắt trình duyệt có thể làm mất sổ. Hãy thêm vào Màn hình chính và luôn mở từ icon đó.";
+  }
+  return null;
 }
 
 function toneClass(tone: Tone): string {
