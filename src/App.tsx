@@ -48,8 +48,8 @@ const HELP: { title: string; body: string }[] = [
   { title: "Chuyển khoản", body: "Dùng để trả thẻ hoặc chuyển giữa các tài khoản. Không tính là thu hay chi." },
   { title: "Ngân sách", body: "Hạn mức chi mỗi tháng cho từng danh mục cha. Dưới 80% bình thường, từ 80% đến 100% là Sát mức (cam), trên 100% là VƯỢT (đỏ)." },
   { title: "Cảnh báo màu", body: "Chi/Thu từ 90% tô cam, trên 100% tô đỏ. Còn lại âm và số dư âm có dấu ⚠. Thẻ còn dưới 20% hạn mức thì cam, âm thì đỏ." },
-  { title: "Báo cáo theo tháng", body: "Nút Báo cáo vẽ cột thu và chi từng tháng. Chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc tự chọn từ tháng đến tháng để so sánh. Chuyển khoản không tính." },
-  { title: "Xuất PDF", body: "Nút cuối trang xuất báo cáo của tháng đang xem, khổ A4, chữ tiếng Việt chọn được." },
+  { title: "Báo cáo", body: "Nút Báo cáo ở đầu trang. Theo tháng vẽ thu chi từng ngày. Theo khoảng vẽ từng tháng, chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc từ tháng đến tháng. Chuyển khoản không tính." },
+  { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang xuất báo cáo của tháng đang xem, khổ A4, chữ tiếng Việt chọn được." },
   { title: "Dữ liệu nằm trên máy này", body: "App không gửi số liệu đi đâu và không tự đồng bộ giữa các máy. Muốn chuyển máy: bấm Sao lưu, giữ file JSON, rồi Khôi phục trên máy kia." },
   { title: "Dữ liệu có thể mất", body: "Trên iPhone, Chrome, Safari và icon Màn hình chính là ba sổ khác nhau. Sổ nhập trong Chrome không hiện khi mở icon. Muốn đưa sang icon: trong Chrome bấm Sao lưu, mở icon, bấm Khôi phục. Sau đó chỉ nhập ở một chỗ. Tab Riêng tư, Zalo hoặc Facebook cũng là sổ khác." },
   { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
@@ -322,9 +322,15 @@ export function App() {
             <button type="button" className="ib" onClick={() => push({ kind: "accounts" })}>🏦 Tài khoản</button>
             <button type="button" className="ib" onClick={() => push({ kind: "cats", flow: "expense" })}>⚙ Danh mục</button>
             <button type="button" className="ib" onClick={() => push({ kind: "budgets" })}>🎯 Ngân sách</button>
-            <button type="button" className="ib" onClick={() => push({ kind: "report" })}>📊 Báo cáo</button>
             <button type="button" className="ib" onClick={() => push({ kind: "help" })}>❓ Hướng dẫn</button>
           </div>
+        </div>
+        <div className="head-tools">
+          <button type="button" onClick={() => void backup()}>Sao lưu</button>
+          <button type="button" onClick={() => fileRef.current?.click()}>Khôi phục</button>
+          <button type="button" onClick={() => void exportPdf()}>Xuất PDF</button>
+          <button type="button" onClick={() => push({ kind: "report" })}>Báo cáo</button>
+          <input ref={fileRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void onRestoreFile(event)} />
         </div>
         <div className="status" role="status">{saveError ? `⚠ ${saveError}` : `☁ Đã lưu${data.lastBackup ? ` · sao lưu ${formatFullDay(data.lastBackup)}` : ""}`}</div>
         <div className="mn">
@@ -548,12 +554,6 @@ export function App() {
             </div>
           ))}
         </div>
-        <div className="tools">
-          <button type="button" onClick={() => void backup()}>Sao lưu</button>
-          <button type="button" onClick={() => fileRef.current?.click()}>Khôi phục</button>
-          <button type="button" onClick={() => void exportPdf()}>📄 Xuất PDF</button>
-          <input ref={fileRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void onRestoreFile(event)} />
-        </div>
       </main>
       {dialogs.map((dialog, index) => (
         <Sheet key={index} onClose={pop}>
@@ -648,7 +648,7 @@ export function App() {
               }}
             />
           )}
-          {dialog.kind === "report" && <ReportSheet transactions={data.transactions} endMonth={month} onClose={pop} />}
+          {dialog.kind === "report" && <ReportSheet transactions={data.transactions} endMonth={month} today={todayISO()} onClose={pop} />}
           {dialog.kind === "help" && (
             <>
               <h3>❓ Hướng dẫn</h3>
