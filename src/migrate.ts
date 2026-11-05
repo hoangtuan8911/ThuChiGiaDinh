@@ -1,5 +1,5 @@
 import { freshData } from "./defaults";
-import type { Account, AccountKind, AppData, Category, Transaction, TxType } from "./types";
+import type { Account, AccountKind, AppData, Books, Category, LedgerScope, Transaction, TxType } from "./types";
 
 const KINDS = new Set<AccountKind>(["bank", "ew", "cash", "cr"]);
 const TYPES = new Set<TxType>(["t", "x", "p"]);
@@ -16,11 +16,16 @@ export function normalize(input: unknown): AppData | null {
 }
 
 function fromCurrent(record: Record<string, unknown>): AppData {
-  const categories = record.categories as { income?: unknown; expense?: unknown };
   const data = freshData();
-  if (Array.isArray(categories.income)) data.categories.income = asCategories(categories.income);
-  if (Array.isArray(categories.expense)) data.categories.expense = asCategories(categories.expense);
-  data.budgets = asBudgets(record.budgets);
+  const categories = record.categories;
+  if (isScopedBooks(categories)) {
+    data.categories.family = readBooks(categories.family, data.categories.family);
+    data.categories.personal = readBooks(categories.personal, data.categories.personal);
+  } else if (isRecord(categories)) {
+    if (Array.isArray(categories.income)) data.categories.family.income = asCategories(categories.income);
+    if (Array.isArray(categories.expense)) data.categories.family.expense = asCategories(categories.expense);
+  }
+  data.budgets = readBudgets(record.budgets);
   if (Array.isArray(record.accounts)) data.accounts = asAccounts(record.accounts);
   data.transactions = asTransactions(record.transactions);
   if (typeof record.lastBackup === "string") data.lastBackup = record.lastBackup;
@@ -32,9 +37,9 @@ function fromLegacy(record: Record<string, unknown>): AppData {
   const cats = (record.cats ?? {}) as { thu?: unknown; chi?: unknown };
   const income = asCategories(cats.thu);
   const expense = asCategories(cats.chi);
-  if (income.length) data.categories.income = income;
-  if (expense.length) data.categories.expense = expense;
-  data.budgets = asBudgets(record.bud);
+  if (income.length) data.categories.family.income = income;
+  if (expense.length) data.categories.family.expense = expense;
+  data.budgets = readBudgets(record.bud);
   if (Array.isArray(record.accs)) data.accounts = asAccounts(record.accs);
   else data.accounts = accountsFromLegacyBalance(record.acc);
   data.transactions = asTransactions(record.tx).map((tx) => repairLegacyTx(tx, record.tx));
@@ -75,6 +80,28 @@ function asCategory(value: unknown): Category | null {
   const subs = rawSubs.filter((sub): sub is string => typeof sub === "string" && sub.trim() !== "");
   const color = typeof value.color === "string" ? value.color : typeof value.c === "string" ? value.c : undefined;
   return { name: name.trim(), subs, color };
+}
+
+function isScopedBooks(value: unknown): value is { family: unknown; personal: unknown } {
+  return isRecord(value) && isRecord(value.family) && isRecord(value.personal) && (Array.isArray(value.family.income) || Array.isArray(value.family.expense));
+}
+
+function readBooks(value: unknown, fallback: Books): Books {
+  if (!isRecord(value)) return fallback;
+  return {
+    income: Array.isArray(value.income) ? asCategories(value.income) : fallback.income,
+    expense: Array.isArray(value.expense) ? asCategories(value.expense) : fallback.expense,
+  };
+}
+
+function readBudgets(value: unknown): Record<LedgerScope, Record<string, number>> {
+  if (isRecord(value) && (isRecord(value.family) || isRecord(value.personal)) && typeof value.family !== "number" && typeof value.personal !== "number") {
+    return {
+      family: asBudgets(value.family),
+      personal: asBudgets(value.personal),
+    };
+  }
+  return { family: asBudgets(value), personal: {} };
 }
 
 function asBudgets(value: unknown): Record<string, number> {
@@ -130,7 +157,8 @@ function asTransaction(value: unknown): Transaction | null {
   const note = typeof value.note === "string" ? value.note : typeof value.n === "string" ? value.n : "";
   const orderValue = value.order ?? value.ts;
   const order = orderValue === undefined ? undefined : numberOr(orderValue, NaN);
-  const tx: Transaction = { id, type, date, amount, category, sub, accountId, toAccountId, note };
+  const scope: LedgerScope = value.scope === "personal" ? "personal" : "family";
+  const tx: Transaction = { id, type, date, amount, category, sub, accountId, toAccountId, note, scope };
   if (order !== undefined && Number.isFinite(order)) tx.order = order;
   return tx;
 }

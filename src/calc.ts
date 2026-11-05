@@ -1,6 +1,6 @@
 import { PALETTE } from "./defaults";
 import { formatVnd, shiftMonth } from "./money";
-import type { Account, AppData, Category, Tone, Transaction } from "./types";
+import type { Account, AppData, Category, LedgerScope, Tone, Transaction } from "./types";
 
 export interface AccountSnapshot {
   account: Account;
@@ -175,12 +175,12 @@ export function monthTotals(transactions: Transaction[], month: string): MonthTo
   return { income, expense, left, tone: "ok", ratioText: `${ratio.toFixed(0)}%`, ratioNote: "" };
 }
 
-export function categorySpend(data: AppData, month: string): CategorySpend[] {
+export function categorySpend(data: AppData, month: string, scope: LedgerScope = "family"): CategorySpend[] {
   const totals = new Map<string, number>();
   const subs = new Map<string, Map<string, number>>();
   let monthExpense = 0;
   for (const tx of data.transactions) {
-    if (tx.type !== "x" || !tx.date.startsWith(month)) continue;
+    if (tx.scope !== scope || tx.type !== "x" || !tx.date.startsWith(month)) continue;
     monthExpense += tx.amount;
     totals.set(tx.category, (totals.get(tx.category) ?? 0) + tx.amount);
     if (tx.sub) {
@@ -189,13 +189,13 @@ export function categorySpend(data: AppData, month: string): CategorySpend[] {
       subs.set(tx.category, group);
     }
   }
-  for (const [name, budget] of Object.entries(data.budgets)) {
+  for (const [name, budget] of Object.entries(data.budgets[scope])) {
     if (budget > 0 && !totals.has(name)) totals.set(name, 0);
   }
   return [...totals.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "vi"))
     .map(([name, total]) => {
-      const budget = data.budgets[name] ?? 0;
+      const budget = data.budgets[scope][name] ?? 0;
       const percent = budget > 0 ? (total / budget) * 100 : monthExpense > 0 ? (total / monthExpense) * 100 : 0;
       const over = budget > 0 && total > budget;
       const near = budget > 0 && !over && percent >= 80;
@@ -234,7 +234,7 @@ export function reportOrder(transactions: Transaction[], month: string): Transac
 export function moveWithinDay(transactions: Transaction[], id: number, direction: -1 | 1): Transaction[] {
   const current = transactions.find((tx) => tx.id === id);
   if (!current) return transactions;
-  const group = transactions.filter((tx) => tx.date === current.date).sort((a, b) => orderOf(b) - orderOf(a));
+  const group = transactions.filter((tx) => tx.date === current.date && tx.scope === current.scope).sort((a, b) => orderOf(b) - orderOf(a));
   const index = group.findIndex((tx) => tx.id === id) + direction;
   if (index < 0 || index >= group.length) return transactions;
   const other = group[index];
@@ -254,8 +254,9 @@ export function categoryColor(categories: Category[], name: string): string {
   return PALETTE[sum % PALETTE.length];
 }
 
-export function allCategories(data: AppData): Category[] {
-  return [...data.categories.expense, ...data.categories.income];
+export function allCategories(data: AppData, scope: LedgerScope = "family"): Category[] {
+  const books = data.categories[scope];
+  return [...books.expense, ...books.income];
 }
 
 export function backupAgeDays(lastBackup: string | undefined, today: string): number | null {

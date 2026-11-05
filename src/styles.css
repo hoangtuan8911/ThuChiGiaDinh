@@ -66,6 +66,17 @@ h1 { font-size: 18px; margin: 0; cursor: pointer; user-select: none; white-space
 }
 .status { text-align: center; font-size: 12px; opacity: 0.9; margin-top: 6px; }
 .build-time { text-align: center; font-size: 10px; opacity: 0.7; margin-top: 2px; }
+.scope { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.scope button {
+  border: 0;
+  border-radius: 12px;
+  padding: 9px 8px;
+  font-size: 15px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+.scope button.on { background: #fff; color: #1f6feb; }
 .mn { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 10px; }
 .mn b { font-size: 17px; min-width: 150px; text-align: center; }
 .mn button {
@@ -158,6 +169,16 @@ button.row { font-size: 15px; font-weight: 400; border-top: 0; border-left: 0; b
 .row .l { min-width: 0; flex: 1; }
 .row .l b { display: block; }
 .row .l small { color: var(--mu); }
+.jump {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--pri);
+  font-size: 13px;
+  font-weight: 700;
+}
 .amt { font-weight: 700; white-space: nowrap; }
 .amt.t { color: var(--thu); }
 .amt.x { color: var(--chi); }
@@ -226,6 +247,7 @@ input, select {
   font-size: 16px;
 }
 .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seg + .seg, .seg + .hint, .hint + .seg { margin-top: 8px; }
 .seg.three { grid-template-columns: repeat(3, 1fr); }
 .seg button {
   padding: 11px;

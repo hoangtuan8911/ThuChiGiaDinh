@@ -1,7 +1,7 @@
 import { jsPDF } from "jspdf";
 import { accountSnapshots, categorySpend, monthTotals, orderOf } from "./calc";
 import { formatFullDay, formatVnd, monthLabel, shiftMonth, todayISO } from "./money";
-import type { AppData, Transaction } from "./types";
+import { SCOPE_LABEL, type AppData, type LedgerScope, type Transaction } from "./types";
 
 const WEEKDAYS = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
 
@@ -42,6 +42,7 @@ export interface TrendPoint {
 
 export interface MonthReport {
   heading: string;
+  scopeText: string;
   monthText: string;
   income: number;
   expense: number;
@@ -56,14 +57,16 @@ export interface MonthReport {
 
 export interface PdfOptions {
   includeBalances: boolean;
+  scope?: LedgerScope;
 }
 
 const TREND_MONTHS = 6;
 
-export function buildMonthReport(data: AppData, month: string): MonthReport {
-  const totals = monthTotals(data.transactions, month);
+export function buildMonthReport(data: AppData, month: string, scope: LedgerScope = "family"): MonthReport {
+  const scoped = data.transactions.filter((tx) => tx.scope === scope);
+  const totals = monthTotals(scoped, month);
   const days = new Map<string, Transaction[]>();
-  for (const tx of data.transactions) {
+  for (const tx of scoped) {
     if (!tx.date.startsWith(month)) continue;
     const list = days.get(tx.date) ?? [];
     list.push(tx);
@@ -71,6 +74,7 @@ export function buildMonthReport(data: AppData, month: string): MonthReport {
   }
   return {
     heading: "Thu Chi Gia Đình",
+    scopeText: SCOPE_LABEL[scope],
     monthText: monthLabel(month),
     income: totals.income,
     expense: totals.expense,
@@ -88,12 +92,12 @@ export function buildMonthReport(data: AppData, month: string): MonthReport {
         detail,
       };
     }),
-    categories: categorySpend(data, month)
+    categories: categorySpend(data, month, scope)
       .filter((row) => row.total > 0)
       .map((row) => ({ name: row.name, total: row.total, caption: row.tag ? `${row.caption} · ${row.tag}` : row.caption })),
     trend: Array.from({ length: TREND_MONTHS }, (_, index) => {
       const pointMonth = shiftMonth(month, index - (TREND_MONTHS - 1));
-      const point = monthTotals(data.transactions, pointMonth);
+      const point = monthTotals(scoped, pointMonth);
       return {
         month: pointMonth,
         label: `${Number(pointMonth.slice(5, 7))}/${pointMonth.slice(2, 4)}`,
@@ -120,7 +124,7 @@ export function buildMonthReport(data: AppData, month: string): MonthReport {
 }
 
 export async function buildPdf(data: AppData, month: string, fontBase64: string, options: PdfOptions = { includeBalances: false }): Promise<Blob> {
-  const report = buildMonthReport(data, month);
+  const report = buildMonthReport(data, month, options.scope ?? "family");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   doc.addFileToVFS("Roboto-Regular.ttf", fontBase64);
   doc.addFont("Roboto-Regular.ttf", "Roboto", "normal");
@@ -149,7 +153,7 @@ export async function buildPdf(data: AppData, month: string, fontBase64: string,
     useFont(8);
     doc.setTextColor(...MUTED);
     doc.text("Thu Chi Gia Đình", margin, 290);
-    doc.text(`${report.monthText}  ·  Trang ${page}`, pageWidth - margin, 290, { align: "right" });
+    doc.text(`${report.scopeText}  ·  ${report.monthText}  ·  Trang ${page}`, pageWidth - margin, 290, { align: "right" });
   };
 
   const nextPage = () => {
@@ -160,7 +164,7 @@ export async function buildPdf(data: AppData, month: string, fontBase64: string,
     y = 16;
     useFont(9);
     doc.setTextColor(...NAVY);
-    doc.text(`${report.heading}  ·  ${report.monthText}`, margin, y);
+    doc.text(`${report.heading}  ·  ${report.scopeText}  ·  ${report.monthText}`, margin, y);
     doc.setDrawColor(...LINE);
     doc.setLineWidth(0.3);
     doc.line(margin, y + 2, margin + contentWidth, y + 2);
@@ -279,13 +283,18 @@ export async function buildPdf(data: AppData, month: string, fontBase64: string,
   doc.setTextColor(255, 255, 255);
   doc.text(report.heading.toUpperCase(), margin, 13);
   useFont(11);
-  doc.text(`Báo cáo ${report.monthText.toLowerCase()}`, margin, 21);
+  doc.text(`Sổ ${report.scopeText.toLowerCase()} · ${report.monthText.toLowerCase()}`, margin, 21);
   useFont(9);
   doc.text(`Ngày xuất ${formatFullDay(todayISO())}`, pageWidth - margin, 21, { align: "right" });
   y = 38;
 
   if (options.includeBalances) {
     section("Số dư tài khoản");
+    ensure(6);
+    useFont(8);
+    doc.setTextColor(...MUTED);
+    doc.text("Số dư là số chung của tài khoản, gồm cả hai sổ.", margin, y + 3);
+    y += 5;
     useFont(8);
     doc.setFillColor(244, 247, 251);
     doc.rect(margin, y, contentWidth, 6.5, "F");

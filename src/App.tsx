@@ -19,6 +19,7 @@ import {
   deleteCategory,
   deleteSub,
   deleteTransaction,
+  moveTransaction,
   listOf,
   renameCategory,
   renameSub,
@@ -34,24 +35,25 @@ import { ReportSheet } from "./report";
 import { SOURCE } from "./source";
 import { storageNotice } from "./browserNotice";
 import { currentRevision, loadAppData, loadMirror, loadUndo, mirrorCurrent, rememberRevision, saveAppData, saveUndo } from "./storage";
-import type { Account, AccountKind, AppData, Flow, Tone, Transaction, TxType } from "./types";
+import { SCOPE_LABEL, type Account, type AccountKind, type AppData, type Flow, type LedgerScope, type Tone, type Transaction, type TxType } from "./types";
 
 const KIND_ICON: Record<AccountKind, string> = { bank: "🏦", ew: "📱", cash: "💵", cr: "💳" };
 /** Lúc build (Actions build khi đăng lên Pages), để biết trang đang mở là bản mới hay bản cũ còn kẹt trong cache. */
 const BUILD_TIME = __BUILD_TIME__;
 
 const HELP: { title: string; body: string }[] = [
-  { title: "Nhập liệu ngay trên trang chủ", body: "Chọn Thu, Chi hoặc Chuyển. Số tiền gõ nhanh: 50k, 1.5tr, 150.000. Chọn ngày, danh mục rồi bấm Lưu." },
-  { title: "Sửa, xóa, sắp xếp", body: "Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày." },
+  { title: "Hai sổ", body: "Nút Gia đình và Cá nhân ở đầu trang. Mỗi sổ có danh mục cha, danh mục con, ngân sách và giao dịch riêng. Số dư tài khoản là số chung của cả hai sổ." },
+  { title: "Nhập liệu ngay trên trang chủ", body: "Chọn sổ Gia đình hoặc Cá nhân, rồi chọn Thu, Chi hoặc Chuyển. Số tiền gõ nhanh: 50k, 1.5tr, 150.000. Chọn ngày, danh mục rồi bấm Lưu." },
+  { title: "Sửa, xóa, sắp xếp", body: "Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày. Nút Chuyển sang Cá nhân hoặc Gia đình đưa khoản đó sang sổ kia, kể cả khoản đã nhập từ trước." },
   { title: "Chuyển tháng", body: "Nút ◀ ▶ đổi tháng đang xem. Số dư tài khoản là số đến hiện tại, không phụ thuộc tháng." },
   { title: "Ẩn số", body: "Tổng thu chi và số dư tài khoản được giấu. Bấm Xem khi cần nhìn, bấm Ẩn để giấu lại." },
-  { title: "Danh mục", body: "Thêm, đổi tên, đổi màu, xóa danh mục và danh mục con. Đổi tên cập nhật giao dịch cũ và ngân sách. Xóa danh mục không xóa giao dịch cũ." },
+  { title: "Danh mục", body: "Mỗi sổ có danh mục riêng. Thêm, đổi tên, đổi màu, xóa danh mục cha và danh mục con của sổ đang chọn. Đổi tên cập nhật giao dịch cũ và ngân sách của sổ đó. Xóa danh mục không xóa giao dịch cũ." },
   { title: "Tài khoản", body: "Ngân hàng, ví điện tử, tiền mặt và thẻ tín dụng. Thẻ nhập dư nợ ban đầu và hạn mức. Khả dụng = hạn mức − dư nợ, không cộng vào số dư các tài khoản khác. Tài khoản đã có giao dịch thì không xóa được." },
   { title: "Chuyển khoản", body: "Dùng để trả thẻ hoặc chuyển giữa các tài khoản. Không tính là thu hay chi." },
-  { title: "Ngân sách", body: "Hạn mức chi mỗi tháng cho từng danh mục cha. Dưới 80% bình thường, từ 80% đến 100% là Sát mức (cam), trên 100% là VƯỢT (đỏ)." },
+  { title: "Ngân sách", body: "Hạn mức chi mỗi tháng cho từng danh mục cha của sổ đang chọn. Dưới 80% bình thường, từ 80% đến 100% là Sát mức (cam), trên 100% là VƯỢT (đỏ)." },
   { title: "Cảnh báo màu", body: "Chi/Thu từ 90% tô cam, trên 100% tô đỏ. Còn lại âm và số dư âm có dấu ⚠. Thẻ còn dưới 20% hạn mức thì cam, âm thì đỏ." },
-  { title: "Báo cáo", body: "Nút Báo cáo ở đầu trang. Theo tháng vẽ thu chi từng ngày. Theo khoảng vẽ từng tháng, chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc từ tháng đến tháng. Chuyển khoản không tính." },
-  { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang hỏi có kèm số dư tài khoản hay không, rồi xuất báo cáo tháng đang xem, khổ A4. Phần 1 là tổng hợp thu chi và đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày: thu một cột, chi một cột." },
+  { title: "Báo cáo", body: "Nút Báo cáo ở đầu trang. Chọn sổ Gia đình hoặc Cá nhân. Theo tháng vẽ thu chi từng ngày. Theo khoảng vẽ từng tháng, chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc từ tháng đến tháng. Chuyển khoản không tính." },
+  { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang chọn sổ Gia đình hoặc Cá nhân, và chọn có in số dư hay không. Phần 1 là tổng hợp thu chi và đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày." },
   { title: "Dữ liệu nằm trên máy này", body: "App không gửi số liệu đi đâu và không tự đồng bộ giữa các máy. Muốn chuyển máy: bấm Sao lưu, giữ file JSON, rồi Khôi phục trên máy kia." },
   { title: "Dữ liệu có thể mất", body: "Trên iPhone, Chrome, Safari và icon Màn hình chính là ba sổ khác nhau. Sổ nhập trong Chrome không hiện khi mở icon. Muốn đưa sang icon: trong Chrome bấm Sao lưu, mở icon, bấm Khôi phục. Sau đó chỉ nhập ở một chỗ. Tab Riêng tư, Zalo hoặc Facebook cũng là sổ khác." },
   { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
@@ -77,6 +79,7 @@ export function App() {
   const dataRef = useRef(data);
   const [saveError, setSaveError] = useState<string | null>(loaded.error);
   const [month, setMonth] = useState(currentMonth);
+  const [scope, setScope] = useState<LedgerScope>(readScope);
   const [hasUndo, setHasUndo] = useState(() => loadUndo() !== null);
   const [storageEnv] = useState(() => readStorageEnv());
   const storageWarning = storageNotice({ ...storageEnv, hasEntries: data.transactions.length > 0 });
@@ -160,13 +163,23 @@ export function App() {
     };
   }, []);
 
-  function blank(nextType: TxType, nextAccount: string, book: AppData) {
+  function chooseScope(next: LedgerScope) {
+    setScope(next);
+    try {
+      localStorage.setItem(SCOPE_KEY, next);
+    } catch {
+      /* Máy không cho ghi thì chỉ đổi trong phiên này. */
+    }
+    blank(rememberedType, rememberedAccount, dataRef.current, next);
+  }
+
+  function blank(nextType: TxType, nextAccount: string, book: AppData, nextScope: LedgerScope = scope) {
     setEditing(null);
     setType(nextType);
     setAmount("");
     setDate(todayISO());
     setNote("");
-    const names = nextType === "p" ? [] : listOf(book, nextType === "t" ? "income" : "expense").map((item) => item.name);
+    const names = nextType === "p" ? [] : listOf(book, nextScope, nextType === "t" ? "income" : "expense").map((item) => item.name);
     setCategory(names[0] ?? "");
     setSub("");
     const account = book.accounts.some((item) => item.id === nextAccount) ? nextAccount : (book.accounts[0]?.id ?? "");
@@ -179,9 +192,9 @@ export function App() {
     if (editing === null) setRememberedType(next);
     if (next === "p") return;
     const flow: Flow = next === "t" ? "income" : "expense";
-    const names = listOf(dataRef.current, flow).map((item) => item.name);
+    const names = listOf(dataRef.current, scope, flow).map((item) => item.name);
     const picked = names.includes(category) ? category : (names[0] ?? "");
-    const parent = listOf(dataRef.current, flow).find((item) => item.name === picked);
+    const parent = listOf(dataRef.current, scope, flow).find((item) => item.name === picked);
     setCategory(picked);
     setSub(parent?.subs.includes(sub) ? sub : "");
   }
@@ -210,6 +223,7 @@ export function App() {
       accountId,
       toAccountId,
       note,
+      scope,
     });
     if (!result.ok) {
       push({ kind: "msg", text: result.error });
@@ -225,6 +239,13 @@ export function App() {
   function move(id: number, direction: -1 | 1) {
     const current = dataRef.current;
     commit({ ...current, transactions: moveWithinDay(current.transactions, id, direction) });
+  }
+
+  function moveScope(id: number) {
+    const nextScope: LedgerScope = scope === "family" ? "personal" : "family";
+    const next = moveTransaction(dataRef.current, id, nextScope);
+    commit(next);
+    if (editing === id) blank(rememberedType, rememberedAccount, next, scope);
   }
 
   async function backup() {
@@ -270,13 +291,13 @@ export function App() {
     }
   }
 
-  async function exportPdf(includeBalances: boolean) {
+  async function exportPdf(includeBalances: boolean, picked: LedgerScope) {
     pop();
     try {
       const { buildPdf } = await import("./pdf");
       const font = await loadFont();
-      const blob = await buildPdf(dataRef.current, month, font, { includeBalances });
-      const filename = `thu-chi-${month}.pdf`;
+      const blob = await buildPdf(dataRef.current, month, font, { includeBalances, scope: picked });
+      const filename = `thu-chi-${picked === "family" ? "gia-dinh" : "ca-nhan"}-${month}.pdf`;
       const file = new File([blob], filename, { type: "application/pdf" });
       if (canShareFile(file)) {
         try {
@@ -302,14 +323,15 @@ export function App() {
     }
   }
 
-  const totals = monthTotals(data.transactions, month);
+  const scopedTx = data.transactions.filter((tx) => tx.scope === scope);
+  const totals = monthTotals(scopedTx, month);
   const snapshots = accountSnapshots(data);
-  const spends = categorySpend(data, month);
-  const rows = screenOrder(data.transactions, month);
-  const colors = allCategories(data);
+  const spends = categorySpend(data, month, scope);
+  const rows = screenOrder(scopedTx, month);
+  const colors = allCategories(data, scope);
   const age = backupAgeDays(data.lastBackup, todayISO());
   const flow: Flow | null = type === "t" ? "income" : type === "x" ? "expense" : null;
-  const parents = flow ? listOf(data, flow) : [];
+  const parents = flow ? listOf(data, scope, flow) : [];
   const categoryOptions = parents.map((item) => item.name);
   if (category && flow && !categoryOptions.includes(category)) categoryOptions.push(category);
   const parent = parents.find((item) => item.name === category);
@@ -335,6 +357,10 @@ export function App() {
           <button type="button" onClick={() => push({ kind: "pdf" })}>Xuất PDF</button>
           <button type="button" onClick={() => push({ kind: "report" })}>Báo cáo</button>
           <input ref={fileRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void onRestoreFile(event)} />
+        </div>
+        <div className="scope">
+          <button type="button" className={scope === "family" ? "on" : ""} onClick={() => chooseScope("family")}>Gia đình</button>
+          <button type="button" className={scope === "personal" ? "on" : ""} onClick={() => chooseScope("personal")}>Cá nhân</button>
         </div>
         <div className="status" role="status">{saveError ? `⚠ ${saveError}` : `☁ Đã lưu${data.lastBackup ? ` · sao lưu ${formatFullDay(data.lastBackup)}` : ""}`}</div>
         <div className="build-time">Cập nhật lúc: {formatDateTime(BUILD_TIME)}</div>
@@ -367,7 +393,7 @@ export function App() {
           </div>
         )}
         <button type="button" className="peek" aria-expanded={showTotals} onClick={() => setShowTotals(toggleFlag(SHOW_TOTALS_KEY, showTotals))}>
-          <span>Tổng thu chi</span>
+          <span>Tổng thu chi · {SCOPE_LABEL[scope]}</span>
           <span>{showTotals ? "Ẩn" : "Xem"}</span>
         </button>
         {showTotals && (
@@ -430,7 +456,7 @@ export function App() {
                     onOk: (name) => {
                       const trimmed = name.trim();
                       if (!trimmed) return;
-                      const result = addCategory(dataRef.current, currentFlow, trimmed);
+                      const result = addCategory(dataRef.current, currentFlow, trimmed, scope);
                       if (!result.ok) {
                         push({ kind: "msg", text: result.error });
                         return;
@@ -461,7 +487,7 @@ export function App() {
                     onOk: (name) => {
                       const trimmed = name.trim();
                       if (!trimmed) return;
-                      const result = addSub(dataRef.current, currentFlow, parentName, trimmed);
+                      const result = addSub(dataRef.current, currentFlow, parentName, trimmed, scope);
                       if (!result.ok) {
                         push({ kind: "msg", text: result.error });
                         return;
@@ -515,7 +541,7 @@ export function App() {
             <button type="button" className="b1" onClick={onSave}>Lưu</button>
           </div>
         </div>
-        <h2>Chi theo danh mục</h2>
+        <h2>Chi theo danh mục · {SCOPE_LABEL[scope]}</h2>
         <div className="list">
           {spends.length === 0 && <div className="empty">Chưa có khoản chi</div>}
           {spends.map((row) => (
@@ -538,9 +564,9 @@ export function App() {
             </div>
           ))}
         </div>
-        <h2>Giao dịch trong tháng</h2>
+        <h2>Giao dịch · {SCOPE_LABEL[scope]}</h2>
         <div className="list">
-          {rows.length === 0 && <div className="empty">Chưa có giao dịch. Nhập ở form phía trên.</div>}
+          {rows.length === 0 && <div className="empty">Chưa có giao dịch trong sổ {SCOPE_LABEL[scope].toLowerCase()}. Nhập ở form phía trên.</div>}
           {rows.map((tx) => (
             <div key={tx.id} className="row" style={{ borderLeft: `4px solid ${tx.type === "p" ? "var(--pri)" : categoryColor(colors, tx.category)}` }} onClick={() => beginEdit(tx)}>
               <div className="l">
@@ -550,6 +576,9 @@ export function App() {
                   {tx.type === "p" ? ` → ${accountName(data, tx.toAccountId)}` : ""}
                   {tx.note ? ` · ${tx.note}` : ""}
                 </small>
+                <button type="button" className="jump" onClick={(event) => { event.stopPropagation(); moveScope(tx.id); }}>
+                  Chuyển sang {scope === "family" ? "Cá nhân" : "Gia đình"}
+                </button>
               </div>
               <span className={`amt ${tx.type}`}>{tx.type === "t" ? "+" : tx.type === "p" ? "⇄ " : "−"}{formatVnd(tx.amount)}</span>
               <span className="mv">
@@ -627,23 +656,24 @@ export function App() {
           {dialog.kind === "cats" && (
             <CategorySheet
               data={data}
+              scope={scope}
               flow={dialog.flow}
               onFlow={(next) => setDialogs((list) => list.map((item, itemIndex) => itemIndex === index && item.kind === "cats" ? { ...item, flow: next } : item))}
               onClose={pop}
               onApply={apply}
               onCommit={commit}
-              onColor={(name, color) => commit(setCategoryColor(dataRef.current, dialog.flow, name, color))}
+              onColor={(name, color) => commit(setCategoryColor(dataRef.current, dialog.flow, name, color, scope))}
               onAsk={(title, onOk) => push({ kind: "ask", title, onOk })}
               onYes={(text, onYes) => push({ kind: "yes", text, onYes })}
             />
           )}
           {dialog.kind === "budgets" && (
             <BudgetForm
-              names={data.categories.expense.map((item) => item.name)}
-              budgets={data.budgets}
+              names={data.categories[scope].expense.map((item) => item.name)}
+              budgets={data.budgets[scope]}
               onCancel={pop}
               onSave={(texts) => {
-                const result = saveBudgets(dataRef.current, texts);
+                const result = saveBudgets(dataRef.current, texts, scope);
                 if (!result.ok) {
                   push({ kind: "msg", text: result.error });
                   return;
@@ -653,8 +683,8 @@ export function App() {
               }}
             />
           )}
-          {dialog.kind === "report" && <ReportSheet transactions={data.transactions} endMonth={month} today={todayISO()} onClose={pop} />}
-          {dialog.kind === "pdf" && <PdfSheet month={month} onClose={pop} onExport={(includeBalances) => void exportPdf(includeBalances)} />}
+          {dialog.kind === "report" && <ReportSheet transactions={data.transactions} endMonth={month} today={todayISO()} initialScope={scope} onClose={pop} />}
+          {dialog.kind === "pdf" && <PdfSheet month={month} initialScope={scope} onClose={pop} onExport={(includeBalances, picked) => void exportPdf(includeBalances, picked)} />}
           {dialog.kind === "help" && (
             <>
               <h3>❓ Hướng dẫn</h3>
@@ -677,12 +707,18 @@ export function App() {
   );
 }
 
-function PdfSheet({ month, onClose, onExport }: { month: string; onClose: () => void; onExport: (includeBalances: boolean) => void }) {
+function PdfSheet({ month, initialScope, onClose, onExport }: { month: string; initialScope: LedgerScope; onClose: () => void; onExport: (includeBalances: boolean, scope: LedgerScope) => void }) {
+  const [picked, setPicked] = useState<LedgerScope>(initialScope);
   const [balances, setBalances] = useState(false);
   return (
     <>
       <h3>Xuất PDF</h3>
       <small className="hint">Báo cáo {monthLabel(month)}. Phần 1 là tổng hợp thu chi, có đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày.</small>
+      <small className="hint">Sổ</small>
+      <div className="seg">
+        <button type="button" className={picked === "family" ? "on p" : ""} onClick={() => setPicked("family")}>Gia đình</button>
+        <button type="button" className={picked === "personal" ? "on p" : ""} onClick={() => setPicked("personal")}>Cá nhân</button>
+      </div>
       <small className="hint">Số dư tài khoản</small>
       <div className="seg">
         <button type="button" className={balances ? "" : "on p"} onClick={() => setBalances(false)}>Không xuất</button>
@@ -690,7 +726,7 @@ function PdfSheet({ month, onClose, onExport }: { month: string; onClose: () => 
       </div>
       <div className="btns">
         <button type="button" className="b2" onClick={onClose}>Hủy</button>
-        <button type="button" className="b1" onClick={() => onExport(balances)}>Xuất</button>
+        <button type="button" className="b1" onClick={() => onExport(balances, picked)}>Xuất</button>
       </div>
     </>
   );
@@ -779,8 +815,9 @@ function AccountForm({ initial, onCancel, onSave, onDelete }: { initial?: Accoun
   );
 }
 
-function CategorySheet({ data, flow, onFlow, onClose, onApply, onCommit, onColor, onAsk, onYes }: {
+function CategorySheet({ data, scope, flow, onFlow, onClose, onApply, onCommit, onColor, onAsk, onYes }: {
   data: AppData;
+  scope: LedgerScope;
   flow: Flow;
   onFlow: (flow: Flow) => void;
   onClose: () => void;
@@ -790,10 +827,10 @@ function CategorySheet({ data, flow, onFlow, onClose, onApply, onCommit, onColor
   onAsk: (title: string, onOk: (value: string) => void) => void;
   onYes: (text: string, onYes: () => void) => void;
 }) {
-  const categories = listOf(data, flow);
+  const categories = listOf(data, scope, flow);
   return (
     <>
-      <h3>⚙ Danh mục</h3>
+      <h3>⚙ Danh mục · {SCOPE_LABEL[scope]}</h3>
       <div className="seg">
         <button type="button" className={flow === "income" ? "on t" : "t"} onClick={() => onFlow("income")}>Thu</button>
         <button type="button" className={flow === "expense" ? "on x" : "x"} onClick={() => onFlow("expense")}>Chi</button>
@@ -814,17 +851,17 @@ function CategorySheet({ data, flow, onFlow, onClose, onApply, onCommit, onColor
                 {" "}{item.name}
               </b>
               <span className="actions">
-                <button type="button" className="sm" onClick={() => onAsk(`Tên danh mục con của "${item.name}"`, (name) => { if (name.trim()) onApply(addSub(data, flow, item.name, name)); })}>＋ con</button>
-                <button type="button" className="sm" onClick={() => onAsk("Đổi tên danh mục", (name) => { if (name.trim()) onApply(renameCategory(data, flow, item.name, name)); })}>✏</button>
-                <button type="button" className="sm" onClick={() => onYes(`Xóa danh mục "${item.name}"? Các giao dịch cũ vẫn giữ nguyên tên này.`, () => onCommit(deleteCategory(data, flow, item.name)))}>🗑</button>
+                <button type="button" className="sm" onClick={() => onAsk(`Tên danh mục con của "${item.name}"`, (name) => { if (name.trim()) onApply(addSub(data, flow, item.name, name, scope)); })}>＋ con</button>
+                <button type="button" className="sm" onClick={() => onAsk("Đổi tên danh mục", (name) => { if (name.trim()) onApply(renameCategory(data, flow, item.name, name, scope)); })}>✏</button>
+                <button type="button" className="sm" onClick={() => onYes(`Xóa danh mục "${item.name}"? Các giao dịch cũ vẫn giữ nguyên tên này.`, () => onCommit(deleteCategory(data, flow, item.name, scope)))}>🗑</button>
               </span>
             </div>
             {item.subs.map((child) => (
               <div key={child} className="sc">
                 <span>↳ {child}</span>
                 <span className="actions">
-                  <button type="button" className="sm" onClick={() => onAsk("Đổi tên danh mục con", (name) => { if (name.trim()) onApply(renameSub(data, flow, item.name, child, name)); })}>✏</button>
-                  <button type="button" className="sm" onClick={() => onYes(`Xóa danh mục con "${child}"?`, () => onCommit(deleteSub(data, flow, item.name, child)))}>🗑</button>
+                  <button type="button" className="sm" onClick={() => onAsk("Đổi tên danh mục con", (name) => { if (name.trim()) onApply(renameSub(data, flow, item.name, child, name, scope)); })}>✏</button>
+                  <button type="button" className="sm" onClick={() => onYes(`Xóa danh mục con "${child}"?`, () => onCommit(deleteSub(data, flow, item.name, child, scope)))}>🗑</button>
                 </span>
               </div>
             ))}
@@ -833,7 +870,7 @@ function CategorySheet({ data, flow, onFlow, onClose, onApply, onCommit, onColor
       </div>
       <div className="btns">
         <button type="button" className="b2" onClick={onClose}>Đóng</button>
-        <button type="button" className="b1" onClick={() => onAsk("Tên danh mục mới", (name) => { if (name.trim()) onApply(addCategory(data, flow, name)); })}>＋ Danh mục</button>
+        <button type="button" className="b1" onClick={() => onAsk("Tên danh mục mới", (name) => { if (name.trim()) onApply(addCategory(data, flow, name, scope)); })}>＋ Danh mục</button>
       </div>
     </>
   );
@@ -861,6 +898,15 @@ function BudgetForm({ names, budgets, onCancel, onSave }: { names: string[]; bud
 
 const SHOW_TOTALS_KEY = "tcgd_show_totals";
 const SHOW_BALANCES_KEY = "tcgd_show_balances";
+const SCOPE_KEY = "tcgd_scope";
+
+function readScope(): LedgerScope {
+  try {
+    return localStorage.getItem(SCOPE_KEY) === "personal" ? "personal" : "family";
+  } catch {
+    return "family";
+  }
+}
 
 function readFlag(key: string): boolean {
   try {

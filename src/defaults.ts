@@ -1,4 +1,4 @@
-import type { AppData, Category } from "./types";
+import type { AppData, Books, Category } from "./types";
 
 function category(name: string, subs: string[] = []): Category {
   return { name, subs };
@@ -25,6 +25,21 @@ export const DEFAULT_EXPENSE: Category[] = [
   category("Chi khác"),
 ];
 
+export const PERSONAL_INCOME: Category[] = [
+  category("Lương"),
+  category("Thưởng"),
+  category("Thu khác"),
+];
+
+export const PERSONAL_EXPENSE: Category[] = [
+  category("Ăn uống", ["Ăn ngoài", "Cà phê"]),
+  category("Đi lại", ["Xăng", "Gửi xe"]),
+  category("Mua sắm"),
+  category("Giải trí"),
+  category("Sức khỏe", ["Khám bệnh", "Thuốc"]),
+  category("Chi khác"),
+];
+
 export const PALETTE = [
   "#2563eb",
   "#16a34a",
@@ -38,14 +53,21 @@ export const PALETTE = [
   "#4f46e5",
 ];
 
+function cloneBooks(income: Category[], expense: Category[]): Books {
+  return {
+    income: income.map((item) => ({ ...item, subs: [...item.subs] })),
+    expense: expense.map((item) => ({ ...item, subs: [...item.subs] })),
+  };
+}
+
 export function freshData(): AppData {
   return {
-    version: 2,
+    version: 3,
     categories: {
-      income: DEFAULT_INCOME.map((item) => ({ ...item, subs: [...item.subs] })),
-      expense: DEFAULT_EXPENSE.map((item) => ({ ...item, subs: [...item.subs] })),
+      family: cloneBooks(DEFAULT_INCOME, DEFAULT_EXPENSE),
+      personal: cloneBooks(PERSONAL_INCOME, PERSONAL_EXPENSE),
     },
-    budgets: {},
+    budgets: { family: {}, personal: {} },
     accounts: [
       { id: "a1", name: "Tài khoản chính", kind: "bank", opening: 0 },
       { id: "a2", name: "Thẻ tín dụng", kind: "cr", opening: 0, limit: 0 },
