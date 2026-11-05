@@ -49,7 +49,7 @@ const HELP: { title: string; body: string }[] = [
   { title: "Ngân sách", body: "Hạn mức chi mỗi tháng cho từng danh mục cha. Dưới 80% bình thường, từ 80% đến 100% là Sát mức (cam), trên 100% là VƯỢT (đỏ)." },
   { title: "Cảnh báo màu", body: "Chi/Thu từ 90% tô cam, trên 100% tô đỏ. Còn lại âm và số dư âm có dấu ⚠. Thẻ còn dưới 20% hạn mức thì cam, âm thì đỏ." },
   { title: "Báo cáo", body: "Nút Báo cáo ở đầu trang. Theo tháng vẽ thu chi từng ngày. Theo khoảng vẽ từng tháng, chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc từ tháng đến tháng. Chuyển khoản không tính." },
-  { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang xuất báo cáo của tháng đang xem, khổ A4, chữ tiếng Việt chọn được." },
+  { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang xuất báo cáo của tháng đang xem, khổ A4. Giao dịch được gom theo ngày: thu một cột, chi một cột." },
   { title: "Dữ liệu nằm trên máy này", body: "App không gửi số liệu đi đâu và không tự đồng bộ giữa các máy. Muốn chuyển máy: bấm Sao lưu, giữ file JSON, rồi Khôi phục trên máy kia." },
   { title: "Dữ liệu có thể mất", body: "Trên iPhone, Chrome, Safari và icon Màn hình chính là ba sổ khác nhau. Sổ nhập trong Chrome không hiện khi mở icon. Muốn đưa sang icon: trong Chrome bấm Sao lưu, mở icon, bấm Khôi phục. Sau đó chỉ nhập ở một chỗ. Tab Riêng tư, Zalo hoặc Facebook cũng là sổ khác." },
   { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
