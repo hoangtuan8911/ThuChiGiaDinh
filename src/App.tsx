@@ -30,7 +30,9 @@ import {
   type Result,
 } from "./mutate";
 import { normalize } from "./migrate";
+import { ReportSheet } from "./report";
 import { SOURCE } from "./source";
+import { storageNotice } from "./browserNotice";
 import { currentRevision, loadAppData, loadMirror, loadUndo, mirrorCurrent, rememberRevision, saveAppData, saveUndo } from "./storage";
 import type { Account, AccountKind, AppData, Flow, Tone, Transaction, TxType } from "./types";
 
@@ -46,9 +48,10 @@ const HELP: { title: string; body: string }[] = [
   { title: "Chuyển khoản", body: "Dùng để trả thẻ hoặc chuyển giữa các tài khoản. Không tính là thu hay chi." },
   { title: "Ngân sách", body: "Hạn mức chi mỗi tháng cho từng danh mục cha. Dưới 80% bình thường, từ 80% đến 100% là Sát mức (cam), trên 100% là VƯỢT (đỏ)." },
   { title: "Cảnh báo màu", body: "Chi/Thu từ 90% tô cam, trên 100% tô đỏ. Còn lại âm và số dư âm có dấu ⚠. Thẻ còn dưới 20% hạn mức thì cam, âm thì đỏ." },
-  { title: "Xuất PDF", body: "Nút cuối trang xuất báo cáo của tháng đang xem, khổ A4, chữ tiếng Việt chọn được." },
+  { title: "Báo cáo", body: "Nút Báo cáo ở đầu trang. Theo tháng vẽ thu chi từng ngày. Theo khoảng vẽ từng tháng, chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc từ tháng đến tháng. Chuyển khoản không tính." },
+  { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang xuất báo cáo của tháng đang xem, khổ A4, chữ tiếng Việt chọn được." },
   { title: "Dữ liệu nằm trên máy này", body: "App không gửi số liệu đi đâu và không tự đồng bộ giữa các máy. Muốn chuyển máy: bấm Sao lưu, giữ file JSON, rồi Khôi phục trên máy kia." },
-  { title: "Dữ liệu có thể mất", body: "Trên iPhone hãy luôn mở từ icon Màn hình chính. Tab Riêng tư, Zalo hoặc Facebook là sổ khác, tắt đi là mất. Safari và icon cũng là hai sổ khác nhau. Nên sao lưu file JSON mỗi tháng." },
+  { title: "Dữ liệu có thể mất", body: "Trên iPhone, Chrome, Safari và icon Màn hình chính là ba sổ khác nhau. Sổ nhập trong Chrome không hiện khi mở icon. Muốn đưa sang icon: trong Chrome bấm Sao lưu, mở icon, bấm Khôi phục. Sau đó chỉ nhập ở một chỗ. Tab Riêng tư, Zalo hoặc Facebook cũng là sổ khác." },
   { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
 ];
 
@@ -60,6 +63,7 @@ type Dialog =
   | { kind: "account"; id?: string }
   | { kind: "cats"; flow: Flow }
   | { kind: "budgets" }
+  | { kind: "report" }
   | { kind: "help" }
   | { kind: "source" };
 
@@ -71,7 +75,8 @@ export function App() {
   const [saveError, setSaveError] = useState<string | null>(loaded.error);
   const [month, setMonth] = useState(currentMonth);
   const [hasUndo, setHasUndo] = useState(() => loadUndo() !== null);
-  const [storageWarning] = useState<string | null>(() => browserWarning());
+  const [storageEnv] = useState(() => readStorageEnv());
+  const storageWarning = storageNotice({ ...storageEnv, hasEntries: data.transactions.length > 0 });
   const [showTotals, setShowTotals] = useState(() => readFlag(SHOW_TOTALS_KEY));
   const [showBalances, setShowBalances] = useState(() => readFlag(SHOW_BALANCES_KEY));
   const [dialogs, setDialogs] = useState<Dialog[]>([]);
@@ -320,6 +325,13 @@ export function App() {
             <button type="button" className="ib" onClick={() => push({ kind: "help" })}>❓ Hướng dẫn</button>
           </div>
         </div>
+        <div className="head-tools">
+          <button type="button" onClick={() => void backup()}>Sao lưu</button>
+          <button type="button" onClick={() => fileRef.current?.click()}>Khôi phục</button>
+          <button type="button" onClick={() => void exportPdf()}>Xuất PDF</button>
+          <button type="button" onClick={() => push({ kind: "report" })}>Báo cáo</button>
+          <input ref={fileRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void onRestoreFile(event)} />
+        </div>
         <div className="status" role="status">{saveError ? `⚠ ${saveError}` : `☁ Đã lưu${data.lastBackup ? ` · sao lưu ${formatFullDay(data.lastBackup)}` : ""}`}</div>
         <div className="mn">
           <button type="button" aria-label="Tháng trước" onClick={() => setMonth((value) => shiftMonth(value, -1))}>◀</button>
@@ -542,12 +554,6 @@ export function App() {
             </div>
           ))}
         </div>
-        <div className="tools">
-          <button type="button" onClick={() => void backup()}>Sao lưu</button>
-          <button type="button" onClick={() => fileRef.current?.click()}>Khôi phục</button>
-          <button type="button" onClick={() => void exportPdf()}>📄 Xuất PDF</button>
-          <input ref={fileRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void onRestoreFile(event)} />
-        </div>
       </main>
       {dialogs.map((dialog, index) => (
         <Sheet key={index} onClose={pop}>
@@ -642,6 +648,7 @@ export function App() {
               }}
             />
           )}
+          {dialog.kind === "report" && <ReportSheet transactions={data.transactions} endMonth={month} today={todayISO()} onClose={pop} />}
           {dialog.kind === "help" && (
             <>
               <h3>❓ Hướng dẫn</h3>
@@ -848,25 +855,24 @@ function toggleFlag(key: string, current: boolean): boolean {
   return next;
 }
 
-function browserWarning(): string | null {
+function readStorageEnv(): Omit<Parameters<typeof storageNotice>[0], "hasEntries"> {
+  let canWrite = true;
   try {
     localStorage.setItem("tcgd_probe", "1");
     localStorage.removeItem("tcgd_probe");
   } catch {
-    return "Máy không cho lưu sổ. Hãy tắt tab Riêng tư, mở bằng Safari, rồi thêm vào Màn hình chính.";
+    canWrite = false;
   }
   const agent = navigator.userAgent;
-  if (/Zalo|FBAN|FBAV|Instagram|Line\//.test(agent)) {
-    return "Đang mở trong ứng dụng khác. Sổ sẽ mất khi đóng. Hãy mở link bằng Safari, rồi thêm vào Màn hình chính.";
-  }
-  const ios = /iPhone|iPad|iPod/.test(agent);
-  const standalone =
-    window.matchMedia("(display-mode: standalone)").matches ||
-    (navigator as Navigator & { standalone?: boolean }).standalone === true;
-  if (ios && !standalone) {
-    return "Đang mở trong Safari. Tắt trình duyệt có thể làm mất sổ. Hãy thêm vào Màn hình chính và luôn mở từ icon đó.";
-  }
-  return null;
+  return {
+    canWrite,
+    inApp: /Zalo|FBAN|FBAV|Instagram|Line\//.test(agent),
+    ios: /iPhone|iPad|iPod/.test(agent),
+    chrome: /CriOS/.test(agent),
+    standalone:
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true,
+  };
 }
 
 function toneClass(tone: Tone): string {
