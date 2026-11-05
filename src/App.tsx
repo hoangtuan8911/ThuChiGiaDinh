@@ -11,7 +11,7 @@ import {
   type AccountSnapshot,
 } from "./calc";
 import fontUrl from "./fonts/Roboto-Regular.ttf?url";
-import { currentMonth, formatDay, formatFullDay, formatVnd, monthLabel, shiftMonth, todayISO } from "./money";
+import { currentMonth, formatDateTime, formatDay, formatFullDay, formatVnd, monthLabel, shiftMonth, todayISO } from "./money";
 import {
   addCategory,
   addSub,
@@ -38,6 +38,8 @@ import { currentRevision, loadAppData, loadMirror, loadUndo, mirrorCurrent, reme
 import { SCOPE_LABEL, type Account, type AccountKind, type AppData, type Flow, type LedgerScope, type Tone, type Transaction, type TxType } from "./types";
 
 const KIND_ICON: Record<AccountKind, string> = { bank: "🏦", ew: "📱", cash: "💵", cr: "💳" };
+/** Lúc build (Actions build khi đăng lên Pages), để biết trang đang mở là bản mới hay bản cũ còn kẹt trong cache. */
+const BUILD_TIME = __BUILD_TIME__;
 
 const HELP: { title: string; body: string }[] = [
   { title: "Hai sổ", body: "Nút Gia đình và Cá nhân ở đầu trang. Mỗi sổ có danh mục cha, danh mục con, ngân sách và giao dịch riêng. Số dư tài khoản là số chung của cả hai sổ." },
@@ -361,6 +363,7 @@ export function App() {
           <button type="button" className={scope === "personal" ? "on" : ""} onClick={() => chooseScope("personal")}>Cá nhân</button>
         </div>
         <div className="status" role="status">{saveError ? `⚠ ${saveError}` : `☁ Đã lưu${data.lastBackup ? ` · sao lưu ${formatFullDay(data.lastBackup)}` : ""}`}</div>
+        <div className="build-time">Cập nhật lúc: {formatDateTime(BUILD_TIME)}</div>
         <div className="mn">
           <button type="button" aria-label="Tháng trước" onClick={() => setMonth((value) => shiftMonth(value, -1))}>◀</button>
           <b>{monthLabel(month)}</b>

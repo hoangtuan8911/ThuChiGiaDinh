@@ -55,6 +55,17 @@ export function monthLabel(month: string): string {
   return `Tháng ${Number(mon)}/${year}`;
 }
 
+/** ISO datetime (vd: lúc build, có "Z" hoặc giờ UTC) → "yyyy-mm-dd HH:mm:ss" theo giờ máy đang xem. */
+export function formatDateTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  );
+}
+
 export function isIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number);

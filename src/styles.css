@@ -65,6 +65,7 @@ h1 { font-size: 18px; margin: 0; cursor: pointer; user-select: none; white-space
   font-size: 14px;
 }
 .status { text-align: center; font-size: 12px; opacity: 0.9; margin-top: 6px; }
+.build-time { text-align: center; font-size: 10px; opacity: 0.7; margin-top: 2px; }
 .scope { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
 .scope button {
   border: 0;
