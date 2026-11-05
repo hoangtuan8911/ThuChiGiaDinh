@@ -75,6 +75,26 @@ export function deleteTransaction(data: AppData, id: number): AppData {
   return next;
 }
 
+/** Đưa một giao dịch sang sổ kia. Danh mục cha và con được thêm vào sổ đích nếu chưa có. */
+export function moveTransaction(data: AppData, id: number, scope: LedgerScope): AppData {
+  const next = copy(data);
+  const tx = next.transactions.find((item) => item.id === id);
+  if (!tx || tx.scope === scope) return next;
+  const from = tx.scope;
+  tx.scope = scope;
+  const flow = flowOf(tx.type);
+  if (!flow || !tx.category || tx.category === "Chuyển khoản") return next;
+  const list = listOf(next, scope, flow);
+  let parent = list.find((category) => category.name === tx.category);
+  if (!parent) {
+    const source = listOf(next, from, flow).find((category) => category.name === tx.category);
+    parent = { name: tx.category, subs: [], color: source?.color };
+    list.push(parent);
+  }
+  if (tx.sub && !parent.subs.includes(tx.sub)) parent.subs.push(tx.sub);
+  return next;
+}
+
 export function addCategory(data: AppData, flow: Flow, name: string, scope: LedgerScope = "family"): Result {
   const trimmed = name.trim();
   if (!trimmed) return fail("Nhập tên");

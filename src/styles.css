@@ -168,6 +168,16 @@ button.row { font-size: 15px; font-weight: 400; border-top: 0; border-left: 0; b
 .row .l { min-width: 0; flex: 1; }
 .row .l b { display: block; }
 .row .l small { color: var(--mu); }
+.jump {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--pri);
+  font-size: 13px;
+  font-weight: 700;
+}
 .amt { font-weight: 700; white-space: nowrap; }
 .amt.t { color: var(--thu); }
 .amt.x { color: var(--chi); }

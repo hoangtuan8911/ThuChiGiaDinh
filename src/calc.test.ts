@@ -3,7 +3,7 @@ import { accountSnapshots, backupAgeDays, categorySpend, daySeries, monthSeries,
 import { freshData } from "./defaults";
 import { normalize } from "./migrate";
 import { parseAmount } from "./money";
-import { deleteAccount, renameCategory, saveAccount, saveBudgets, saveTransaction } from "./mutate";
+import { deleteAccount, moveTransaction, renameCategory, saveAccount, saveBudgets, saveTransaction } from "./mutate";
 import type { AppData, Transaction } from "./types";
 
 function must<T extends { ok: true; data: AppData } | { ok: false; error: string }>(result: T): AppData {
@@ -216,6 +216,20 @@ describe("hai sổ", () => {
     expect(monthTotals(personal, "2026-11").expense).toBe(40_000);
     expect(categorySpend(data, "2026-11", "family").map((row) => row.name)).toEqual(["Ăn uống"]);
     expect(categorySpend(data, "2026-11", "personal").map((row) => row.name)).toEqual(["Đi lại"]);
+  });
+
+  it("chuyển khoản chi cũ sang cá nhân và mang theo danh mục", () => {
+    let data = freshData();
+    data = must(saveTransaction(data, { type: "x", amountText: "50k", date: "2026-11-04", category: "Nhà cửa", sub: "Điện", accountId: "a1", toAccountId: "", note: "điện", scope: "family" }));
+    const id = data.transactions[0]?.id ?? 0;
+    data = moveTransaction(data, id, "personal");
+    expect(data.transactions[0]?.scope).toBe("personal");
+    expect(data.categories.personal.expense.find((category) => category.name === "Nhà cửa")?.subs).toContain("Điện");
+    expect(data.categories.family.expense.some((category) => category.name === "Nhà cửa")).toBe(true);
+    expect(categorySpend(data, "2026-11", "personal").find((row) => row.name === "Nhà cửa")?.total).toBe(50_000);
+    expect(categorySpend(data, "2026-11", "family").find((row) => row.name === "Nhà cửa")).toBeUndefined();
+    data = moveTransaction(data, id, "family");
+    expect(data.transactions[0]?.scope).toBe("family");
   });
 
   it("sổ cũ không có scope được đưa vào gia đình", () => {
