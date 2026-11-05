@@ -11,7 +11,7 @@ import {
   type AccountSnapshot,
 } from "./calc";
 import fontUrl from "./fonts/Roboto-Regular.ttf?url";
-import { currentMonth, formatDay, formatFullDay, formatVnd, monthLabel, shiftMonth, todayISO } from "./money";
+import { currentMonth, formatDateTime, formatDay, formatFullDay, formatVnd, monthLabel, shiftMonth, todayISO } from "./money";
 import {
   addCategory,
   addSub,
@@ -37,6 +37,8 @@ import { currentRevision, loadAppData, loadMirror, loadUndo, mirrorCurrent, reme
 import type { Account, AccountKind, AppData, Flow, Tone, Transaction, TxType } from "./types";
 
 const KIND_ICON: Record<AccountKind, string> = { bank: "🏦", ew: "📱", cash: "💵", cr: "💳" };
+/** Lúc build (Actions build khi đăng lên Pages), để biết trang đang mở là bản mới hay bản cũ còn kẹt trong cache. */
+const BUILD_TIME = __BUILD_TIME__;
 
 const HELP: { title: string; body: string }[] = [
   { title: "Nhập liệu ngay trên trang chủ", body: "Chọn Thu, Chi hoặc Chuyển. Số tiền gõ nhanh: 50k, 1.5tr, 150.000. Chọn ngày, danh mục rồi bấm Lưu." },
@@ -335,6 +337,7 @@ export function App() {
           <input ref={fileRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void onRestoreFile(event)} />
         </div>
         <div className="status" role="status">{saveError ? `⚠ ${saveError}` : `☁ Đã lưu${data.lastBackup ? ` · sao lưu ${formatFullDay(data.lastBackup)}` : ""}`}</div>
+        <div className="build-time">Cập nhật lúc: {formatDateTime(BUILD_TIME)}</div>
         <div className="mn">
           <button type="button" aria-label="Tháng trước" onClick={() => setMonth((value) => shiftMonth(value, -1))}>◀</button>
           <b>{monthLabel(month)}</b>
