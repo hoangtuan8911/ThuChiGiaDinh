@@ -1,7 +1,7 @@
 import { jsPDF } from "jspdf";
 import { accountSnapshots, categorySpend, monthTotals, orderOf } from "./calc";
 import { formatFullDay, formatVnd, monthLabel, shiftMonth, todayISO } from "./money";
-import { SCOPE_LABEL, type AppData, type LedgerScope, type Transaction } from "./types";
+import { REPORT_SCOPE_LABEL, type AppData, type ReportScope, type Transaction } from "./types";
 
 const WEEKDAYS = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
 
@@ -43,6 +43,7 @@ export interface TrendPoint {
 export interface MonthReport {
   heading: string;
   scopeText: string;
+  scopeLine: string;
   monthText: string;
   income: number;
   expense: number;
@@ -57,13 +58,13 @@ export interface MonthReport {
 
 export interface PdfOptions {
   includeBalances: boolean;
-  scope?: LedgerScope;
+  scope?: ReportScope;
 }
 
 const TREND_MONTHS = 6;
 
-export function buildMonthReport(data: AppData, month: string, scope: LedgerScope = "family"): MonthReport {
-  const scoped = data.transactions.filter((tx) => tx.scope === scope);
+export function buildMonthReport(data: AppData, month: string, scope: ReportScope = "family"): MonthReport {
+  const scoped = scope === "all" ? data.transactions : data.transactions.filter((tx) => tx.scope === scope);
   const totals = monthTotals(scoped, month);
   const days = new Map<string, Transaction[]>();
   for (const tx of scoped) {
@@ -74,7 +75,8 @@ export function buildMonthReport(data: AppData, month: string, scope: LedgerScop
   }
   return {
     heading: "Thu Chi Gia Đình",
-    scopeText: SCOPE_LABEL[scope],
+    scopeText: REPORT_SCOPE_LABEL[scope],
+    scopeLine: scope === "all" ? "Tổng cả hai sổ" : `Sổ ${REPORT_SCOPE_LABEL[scope].toLowerCase()}`,
     monthText: monthLabel(month),
     income: totals.income,
     expense: totals.expense,
@@ -283,7 +285,7 @@ export async function buildPdf(data: AppData, month: string, fontBase64: string,
   doc.setTextColor(255, 255, 255);
   doc.text(report.heading.toUpperCase(), margin, 13);
   useFont(11);
-  doc.text(`Sổ ${report.scopeText.toLowerCase()} · ${report.monthText.toLowerCase()}`, margin, 21);
+  doc.text(`${report.scopeLine} · ${report.monthText.toLowerCase()}`, margin, 21);
   useFont(9);
   doc.text(`Ngày xuất ${formatFullDay(todayISO())}`, pageWidth - margin, 21, { align: "right" });
   y = 38;

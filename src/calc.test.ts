@@ -218,6 +218,20 @@ describe("hai sổ", () => {
     expect(categorySpend(data, "2026-11", "personal").map((row) => row.name)).toEqual(["Đi lại"]);
   });
 
+  it("xem Tổng cộng cả hai sổ và ngân sách cùng tên", () => {
+    let data = freshData();
+    data = must(saveBudgets(data, { "Ăn uống": "1000000" }, "family"));
+    data = must(saveBudgets(data, { "Ăn uống": "500000" }, "personal"));
+    data = must(saveTransaction(data, { type: "x", amountText: "100k", date: "2026-11-02", category: "Ăn uống", sub: "", accountId: "a1", toAccountId: "", note: "", scope: "family" }));
+    data = must(saveTransaction(data, { type: "x", amountText: "40k", date: "2026-11-03", category: "Đi lại", sub: "Xăng", accountId: "a1", toAccountId: "", note: "", scope: "personal" }));
+    const total = monthTotals(data.transactions, "2026-11");
+    expect(total.expense).toBe(140_000);
+    const spend = categorySpend(data, "2026-11", "all");
+    expect(spend.map((row) => row.name).sort()).toEqual(["Ăn uống", "Đi lại"]);
+    expect(spend.find((row) => row.name === "Ăn uống")?.budget).toBe(1_500_000);
+    expect(spend.find((row) => row.name === "Đi lại")?.total).toBe(40_000);
+  });
+
   it("chuyển khoản chi cũ sang cá nhân và mang theo danh mục", () => {
     let data = freshData();
     data = must(saveTransaction(data, { type: "x", amountText: "50k", date: "2026-11-04", category: "Nhà cửa", sub: "Điện", accountId: "a1", toAccountId: "", note: "điện", scope: "family" }));

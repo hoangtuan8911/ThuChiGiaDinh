@@ -2,10 +2,17 @@ export type AccountKind = "bank" | "ew" | "cash" | "cr";
 export type TxType = "t" | "x" | "p";
 export type Flow = "income" | "expense";
 export type LedgerScope = "family" | "personal";
+/** Dùng cho Báo cáo và Xuất PDF: thêm "all" để xem tổng cả hai sổ cộng lại. */
+export type ReportScope = LedgerScope | "all";
 
 export const SCOPE_LABEL: Record<LedgerScope, string> = {
   family: "Gia đình",
   personal: "Cá nhân",
+};
+
+export const REPORT_SCOPE_LABEL: Record<ReportScope, string> = {
+  ...SCOPE_LABEL,
+  all: "Tổng",
 };
 
 export interface Account {

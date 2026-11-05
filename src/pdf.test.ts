@@ -59,4 +59,20 @@ describe("pdf", () => {
       expect(text).not.toContain("/DCTDecode");
     }
   });
+
+  it("xem Tổng gộp thu chi cả hai sổ", () => {
+    let data = freshData();
+    data = add(data, "t", "30000000", "2026-11-01", "Lương");
+    data = add(data, "x", "50k", "2026-11-04", "Ăn uống", "sáng");
+    const saved = saveTransaction(data, { type: "x", amountText: "40k", date: "2026-11-05", category: "Đi lại", sub: "", accountId: "a1", toAccountId: "", note: "", scope: "personal" });
+    if (!saved.ok) throw new Error(saved.error);
+    data = saved.data;
+
+    const family = buildMonthReport(data, "2026-11", "family");
+    expect(family.expense).toBe(50_000);
+    const total = buildMonthReport(data, "2026-11", "all");
+    expect(total.scopeText).toBe("Tổng");
+    expect(total.expense).toBe(90_000);
+    expect(total.categories.map((row) => row.name).sort()).toEqual(["Ăn uống", "Đi lại"]);
+  });
 });

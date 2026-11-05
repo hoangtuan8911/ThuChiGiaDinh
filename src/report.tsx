@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { daySeries, monthSeries, type MonthPoint } from "./calc";
 import { formatVnd, monthLabel, shiftMonth } from "./money";
-import { SCOPE_LABEL, type LedgerScope, type Transaction } from "./types";
+import { REPORT_SCOPE_LABEL, type LedgerScope, type ReportScope, type Transaction } from "./types";
 
 type Mode = "month" | "range";
 type Preset = "3" | "6" | "12" | "year";
@@ -15,25 +15,28 @@ const PRESETS: { id: Preset; label: string }[] = [
 
 export function ReportSheet({ transactions, endMonth, today, initialScope, onClose }: { transactions: Transaction[]; endMonth: string; today: string; initialScope: LedgerScope; onClose: () => void }) {
   const [mode, setMode] = useState<Mode>("month");
-  const [scope, setScope] = useState<LedgerScope>(initialScope);
+  const [scope, setScope] = useState<ReportScope>(initialScope);
   const [dayMonth, setDayMonth] = useState(endMonth);
   const initial = rangeFor("6", endMonth);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
-  const scoped = transactions.filter((tx) => tx.scope === scope);
+  const scoped = scope === "all" ? transactions : transactions.filter((tx) => tx.scope === scope);
 
   return (
     <>
       <h3>📊 Báo cáo</h3>
-      <div className="seg">
-        <button type="button" className={scope === "family" ? "on p" : ""} onClick={() => setScope("family")}>{SCOPE_LABEL.family}</button>
-        <button type="button" className={scope === "personal" ? "on p" : ""} onClick={() => setScope("personal")}>{SCOPE_LABEL.personal}</button>
+      <div className="seg three">
+        <button type="button" className={scope === "family" ? "on p" : ""} onClick={() => setScope("family")}>{REPORT_SCOPE_LABEL.family}</button>
+        <button type="button" className={scope === "personal" ? "on p" : ""} onClick={() => setScope("personal")}>{REPORT_SCOPE_LABEL.personal}</button>
+        <button type="button" className={scope === "all" ? "on p" : ""} onClick={() => setScope("all")}>{REPORT_SCOPE_LABEL.all}</button>
       </div>
       <div className="seg">
         <button type="button" className={mode === "month" ? "on p" : ""} onClick={() => setMode("month")}>Theo tháng</button>
         <button type="button" className={mode === "range" ? "on p" : ""} onClick={() => setMode("range")}>Theo khoảng</button>
       </div>
-      <small className="hint">Đang xem sổ {SCOPE_LABEL[scope].toLowerCase()}. Chuyển khoản không tính là thu hay chi. Cột xanh là thu, cột đỏ là chi.</small>
+      <small className="hint">
+        {scope === "all" ? "Đang xem tổng cả hai sổ." : `Đang xem sổ ${REPORT_SCOPE_LABEL[scope].toLowerCase()}.`} Chuyển khoản không tính là thu hay chi. Cột xanh là thu, cột đỏ là chi.
+      </small>
       {mode === "month" ? (
         <MonthDays transactions={scoped} month={dayMonth} today={today} onMonth={setDayMonth} />
       ) : (
