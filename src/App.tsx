@@ -19,6 +19,7 @@ import {
   deleteCategory,
   deleteSub,
   deleteTransaction,
+  moveTransaction,
   listOf,
   renameCategory,
   renameSub,
@@ -41,7 +42,7 @@ const KIND_ICON: Record<AccountKind, string> = { bank: "🏦", ew: "📱", cash:
 const HELP: { title: string; body: string }[] = [
   { title: "Hai sổ", body: "Nút Gia đình và Cá nhân ở đầu trang. Mỗi sổ có danh mục cha, danh mục con, ngân sách và giao dịch riêng. Số dư tài khoản là số chung của cả hai sổ." },
   { title: "Nhập liệu ngay trên trang chủ", body: "Chọn sổ Gia đình hoặc Cá nhân, rồi chọn Thu, Chi hoặc Chuyển. Số tiền gõ nhanh: 50k, 1.5tr, 150.000. Chọn ngày, danh mục rồi bấm Lưu." },
-  { title: "Sửa, xóa, sắp xếp", body: "Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày." },
+  { title: "Sửa, xóa, sắp xếp", body: "Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày. Nút Chuyển sang Cá nhân hoặc Gia đình đưa khoản đó sang sổ kia, kể cả khoản đã nhập từ trước." },
   { title: "Chuyển tháng", body: "Nút ◀ ▶ đổi tháng đang xem. Số dư tài khoản là số đến hiện tại, không phụ thuộc tháng." },
   { title: "Ẩn số", body: "Tổng thu chi và số dư tài khoản được giấu. Bấm Xem khi cần nhìn, bấm Ẩn để giấu lại." },
   { title: "Danh mục", body: "Mỗi sổ có danh mục riêng. Thêm, đổi tên, đổi màu, xóa danh mục cha và danh mục con của sổ đang chọn. Đổi tên cập nhật giao dịch cũ và ngân sách của sổ đó. Xóa danh mục không xóa giao dịch cũ." },
@@ -236,6 +237,13 @@ export function App() {
   function move(id: number, direction: -1 | 1) {
     const current = dataRef.current;
     commit({ ...current, transactions: moveWithinDay(current.transactions, id, direction) });
+  }
+
+  function moveScope(id: number) {
+    const nextScope: LedgerScope = scope === "family" ? "personal" : "family";
+    const next = moveTransaction(dataRef.current, id, nextScope);
+    commit(next);
+    if (editing === id) blank(rememberedType, rememberedAccount, next, scope);
   }
 
   async function backup() {
@@ -565,6 +573,9 @@ export function App() {
                   {tx.type === "p" ? ` → ${accountName(data, tx.toAccountId)}` : ""}
                   {tx.note ? ` · ${tx.note}` : ""}
                 </small>
+                <button type="button" className="jump" onClick={(event) => { event.stopPropagation(); moveScope(tx.id); }}>
+                  Chuyển sang {scope === "family" ? "Cá nhân" : "Gia đình"}
+                </button>
               </div>
               <span className={`amt ${tx.type}`}>{tx.type === "t" ? "+" : tx.type === "p" ? "⇄ " : "−"}{formatVnd(tx.amount)}</span>
               <span className="mv">
