@@ -35,7 +35,7 @@ import { ReportSheet } from "./report";
 import { SOURCE } from "./source";
 import { storageNotice } from "./browserNotice";
 import { currentRevision, loadAppData, loadMirror, loadUndo, mirrorCurrent, rememberRevision, saveAppData, saveUndo } from "./storage";
-import { SCOPE_LABEL, type Account, type AccountKind, type AppData, type Flow, type LedgerScope, type Tone, type Transaction, type TxType } from "./types";
+import { REPORT_SCOPE_LABEL, SCOPE_LABEL, type Account, type AccountKind, type AppData, type Flow, type LedgerScope, type ReportScope, type Tone, type Transaction, type TxType } from "./types";
 
 const KIND_ICON: Record<AccountKind, string> = { bank: "🏦", ew: "📱", cash: "💵", cr: "💳" };
 
@@ -50,8 +50,8 @@ const HELP: { title: string; body: string }[] = [
   { title: "Chuyển khoản", body: "Dùng để trả thẻ hoặc chuyển giữa các tài khoản. Không tính là thu hay chi." },
   { title: "Ngân sách", body: "Hạn mức chi mỗi tháng cho từng danh mục cha của sổ đang chọn. Dưới 80% bình thường, từ 80% đến 100% là Sát mức (cam), trên 100% là VƯỢT (đỏ)." },
   { title: "Cảnh báo màu", body: "Chi/Thu từ 90% tô cam, trên 100% tô đỏ. Còn lại âm và số dư âm có dấu ⚠. Thẻ còn dưới 20% hạn mức thì cam, âm thì đỏ." },
-  { title: "Báo cáo", body: "Nút Báo cáo ở đầu trang. Chọn sổ Gia đình hoặc Cá nhân. Theo tháng vẽ thu chi từng ngày. Theo khoảng vẽ từng tháng, chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc từ tháng đến tháng. Chuyển khoản không tính." },
-  { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang chọn sổ Gia đình hoặc Cá nhân, và chọn có in số dư hay không. Phần 1 là tổng hợp thu chi và đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày." },
+  { title: "Báo cáo", body: "Nút Báo cáo ở đầu trang. Chọn sổ Gia đình, Cá nhân, hoặc Tổng để xem cả hai sổ cộng lại. Theo tháng vẽ thu chi từng ngày. Theo khoảng vẽ từng tháng, chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc từ tháng đến tháng. Chuyển khoản không tính." },
+  { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang chọn sổ Gia đình, Cá nhân, hoặc Tổng để xuất cả hai sổ cộng lại, và chọn có in số dư hay không. Phần 1 là tổng hợp thu chi và đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày." },
   { title: "Dữ liệu nằm trên máy này", body: "App không gửi số liệu đi đâu và không tự đồng bộ giữa các máy. Muốn chuyển máy: bấm Sao lưu, giữ file JSON, rồi Khôi phục trên máy kia." },
   { title: "Dữ liệu có thể mất", body: "Trên iPhone, Chrome, Safari và icon Màn hình chính là ba sổ khác nhau. Sổ nhập trong Chrome không hiện khi mở icon. Muốn đưa sang icon: trong Chrome bấm Sao lưu, mở icon, bấm Khôi phục. Sau đó chỉ nhập ở một chỗ. Tab Riêng tư, Zalo hoặc Facebook cũng là sổ khác." },
   { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
@@ -289,13 +289,13 @@ export function App() {
     }
   }
 
-  async function exportPdf(includeBalances: boolean, picked: LedgerScope) {
+  async function exportPdf(includeBalances: boolean, picked: ReportScope) {
     pop();
     try {
       const { buildPdf } = await import("./pdf");
       const font = await loadFont();
       const blob = await buildPdf(dataRef.current, month, font, { includeBalances, scope: picked });
-      const filename = `thu-chi-${picked === "family" ? "gia-dinh" : "ca-nhan"}-${month}.pdf`;
+      const filename = `thu-chi-${picked === "family" ? "gia-dinh" : picked === "personal" ? "ca-nhan" : "tong"}-${month}.pdf`;
       const file = new File([blob], filename, { type: "application/pdf" });
       if (canShareFile(file)) {
         try {
@@ -704,17 +704,18 @@ export function App() {
   );
 }
 
-function PdfSheet({ month, initialScope, onClose, onExport }: { month: string; initialScope: LedgerScope; onClose: () => void; onExport: (includeBalances: boolean, scope: LedgerScope) => void }) {
-  const [picked, setPicked] = useState<LedgerScope>(initialScope);
+function PdfSheet({ month, initialScope, onClose, onExport }: { month: string; initialScope: LedgerScope; onClose: () => void; onExport: (includeBalances: boolean, scope: ReportScope) => void }) {
+  const [picked, setPicked] = useState<ReportScope>(initialScope);
   const [balances, setBalances] = useState(false);
   return (
     <>
       <h3>Xuất PDF</h3>
       <small className="hint">Báo cáo {monthLabel(month)}. Phần 1 là tổng hợp thu chi, có đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày.</small>
       <small className="hint">Sổ</small>
-      <div className="seg">
-        <button type="button" className={picked === "family" ? "on p" : ""} onClick={() => setPicked("family")}>Gia đình</button>
-        <button type="button" className={picked === "personal" ? "on p" : ""} onClick={() => setPicked("personal")}>Cá nhân</button>
+      <div className="seg three">
+        <button type="button" className={picked === "family" ? "on p" : ""} onClick={() => setPicked("family")}>{REPORT_SCOPE_LABEL.family}</button>
+        <button type="button" className={picked === "personal" ? "on p" : ""} onClick={() => setPicked("personal")}>{REPORT_SCOPE_LABEL.personal}</button>
+        <button type="button" className={picked === "all" ? "on p" : ""} onClick={() => setPicked("all")}>{REPORT_SCOPE_LABEL.all}</button>
       </div>
       <small className="hint">Số dư tài khoản</small>
       <div className="seg">

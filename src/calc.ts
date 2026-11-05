@@ -1,6 +1,6 @@
 import { PALETTE } from "./defaults";
 import { formatVnd, shiftMonth } from "./money";
-import type { Account, AppData, Category, LedgerScope, Tone, Transaction } from "./types";
+import type { Account, AppData, Category, LedgerScope, ReportScope, Tone, Transaction } from "./types";
 
 export interface AccountSnapshot {
   account: Account;
@@ -175,12 +175,13 @@ export function monthTotals(transactions: Transaction[], month: string): MonthTo
   return { income, expense, left, tone: "ok", ratioText: `${ratio.toFixed(0)}%`, ratioNote: "" };
 }
 
-export function categorySpend(data: AppData, month: string, scope: LedgerScope = "family"): CategorySpend[] {
+export function categorySpend(data: AppData, month: string, scope: ReportScope = "family"): CategorySpend[] {
   const totals = new Map<string, number>();
   const subs = new Map<string, Map<string, number>>();
   let monthExpense = 0;
   for (const tx of data.transactions) {
-    if (tx.scope !== scope || tx.type !== "x" || !tx.date.startsWith(month)) continue;
+    if (tx.type !== "x" || !tx.date.startsWith(month)) continue;
+    if (scope !== "all" && tx.scope !== scope) continue;
     monthExpense += tx.amount;
     totals.set(tx.category, (totals.get(tx.category) ?? 0) + tx.amount);
     if (tx.sub) {
@@ -189,13 +190,14 @@ export function categorySpend(data: AppData, month: string, scope: LedgerScope =
       subs.set(tx.category, group);
     }
   }
-  for (const [name, budget] of Object.entries(data.budgets[scope])) {
+  const budgets = scope === "all" ? combinedBudgets(data) : data.budgets[scope];
+  for (const [name, budget] of Object.entries(budgets)) {
     if (budget > 0 && !totals.has(name)) totals.set(name, 0);
   }
   return [...totals.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "vi"))
     .map(([name, total]) => {
-      const budget = data.budgets[scope][name] ?? 0;
+      const budget = budgets[name] ?? 0;
       const percent = budget > 0 ? (total / budget) * 100 : monthExpense > 0 ? (total / monthExpense) * 100 : 0;
       const over = budget > 0 && total > budget;
       const near = budget > 0 && !over && percent >= 80;
@@ -216,6 +218,17 @@ export function categorySpend(data: AppData, month: string, scope: LedgerScope =
         subs: children.map(([child, amount]) => ({ name: child, total: amount })),
       };
     });
+}
+
+/** Xem Tổng: ngân sách của danh mục cùng tên ở hai sổ cộng lại. */
+function combinedBudgets(data: AppData): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const scope of ["family", "personal"] as const) {
+    for (const [name, budget] of Object.entries(data.budgets[scope])) {
+      result[name] = (result[name] ?? 0) + budget;
+    }
+  }
+  return result;
 }
 
 export function screenOrder(transactions: Transaction[], month?: string): Transaction[] {
