@@ -16,6 +16,7 @@ function tx(partial: Pick<Transaction, "id" | "type" | "date" | "amount" | "acco
     category: partial.type === "p" ? "Chuyển khoản" : "Ăn uống",
     sub: "",
     note: "",
+    scope: "family",
     ...partial,
   };
 }
@@ -163,9 +164,9 @@ describe("danh mục và tài khoản", () => {
     data = must(renameCategory(data, "expense", "Ăn uống", "Ăn nhậu"));
     expect(data.transactions[0]?.category).toBe("Ăn nhậu");
     expect(data.transactions[0]?.sub).toBe("Cà phê");
-    expect(data.budgets["Ăn nhậu"]).toBe(1_000_000);
-    expect(data.budgets["Ăn uống"]).toBeUndefined();
-    expect(data.categories.expense.find((category) => category.name === "Ăn nhậu")?.subs).toEqual(["Ăn ngoài", "Cà phê"]);
+    expect(data.budgets.family["Ăn nhậu"]).toBe(1_000_000);
+    expect(data.budgets.family["Ăn uống"]).toBeUndefined();
+    expect(data.categories.family.expense.find((category) => category.name === "Ăn nhậu")?.subs).toEqual(["Ăn ngoài", "Cà phê"]);
   });
 
   it("hai tài khoản thêm liền nhau không trùng mã", () => {
@@ -197,9 +198,38 @@ describe("di trú dữ liệu cũ", () => {
     });
     expect(restored?.accounts.find((account) => account.id === "a1")?.opening).toBe(10_000_000);
     expect(restored?.accounts.find((account) => account.id === "a2")).toMatchObject({ opening: 2000, limit: 5_000_000 });
-    expect(restored?.transactions[0]).toMatchObject({ accountId: "a2", category: "Ăn uống", sub: "Cà phê" });
-    expect(restored?.budgets["Ăn uống"]).toBe(500_000);
+    expect(restored?.transactions[0]).toMatchObject({ accountId: "a2", category: "Ăn uống", sub: "Cà phê", scope: "family" });
+    expect(restored?.budgets.family["Ăn uống"]).toBe(500_000);
+    expect(restored?.categories.personal.expense.some((category) => category.name === "Đi lại")).toBe(true);
     expect(JSON.parse(JSON.stringify(normalize(JSON.parse(JSON.stringify(restored)))))).toEqual(restored);
+  });
+});
+
+describe("hai sổ", () => {
+  it("chi cá nhân không vào tổng và danh mục của gia đình", () => {
+    let data = freshData();
+    data = must(saveTransaction(data, { type: "x", amountText: "100k", date: "2026-11-02", category: "Ăn uống", sub: "", accountId: "a1", toAccountId: "", note: "", scope: "family" }));
+    data = must(saveTransaction(data, { type: "x", amountText: "40k", date: "2026-11-03", category: "Đi lại", sub: "Xăng", accountId: "a1", toAccountId: "", note: "", scope: "personal" }));
+    const family = data.transactions.filter((item) => item.scope === "family");
+    const personal = data.transactions.filter((item) => item.scope === "personal");
+    expect(monthTotals(family, "2026-11").expense).toBe(100_000);
+    expect(monthTotals(personal, "2026-11").expense).toBe(40_000);
+    expect(categorySpend(data, "2026-11", "family").map((row) => row.name)).toEqual(["Ăn uống"]);
+    expect(categorySpend(data, "2026-11", "personal").map((row) => row.name)).toEqual(["Đi lại"]);
+  });
+
+  it("sổ cũ không có scope được đưa vào gia đình", () => {
+    const restored = normalize({
+      accounts: [{ id: "a1", name: "Tài khoản chính", kind: "bank", opening: 0 }],
+      categories: { income: [{ name: "Lương", subs: [] }], expense: [{ name: "Nhà cửa", subs: ["Điện"] }] },
+      budgets: { "Nhà cửa": 1000 },
+      transactions: [{ id: 1, type: "x", date: "2026-11-01", amount: 10, category: "Nhà cửa", sub: "Điện", accountId: "a1" }],
+    });
+    expect(restored?.transactions[0]?.scope).toBe("family");
+    expect(restored?.categories.family.expense[0]?.name).toBe("Nhà cửa");
+    expect(restored?.budgets.family["Nhà cửa"]).toBe(1000);
+    expect(restored?.budgets.personal).toEqual({});
+    expect(restored?.categories.personal.income.some((category) => category.name === "Lương")).toBe(true);
   });
 });
 

@@ -1,4 +1,4 @@
-import type { Account, AppData, Flow, Transaction, TxType } from "./types";
+import type { Account, AppData, Flow, LedgerScope, Transaction, TxType } from "./types";
 import { isIsoDate, parseAmount } from "./money";
 
 export type Result = { ok: true; data: AppData } | { ok: false; error: string };
@@ -17,8 +17,9 @@ function flowOf(type: TxType): Flow | null {
   return null;
 }
 
-export function listOf(data: AppData, flow: Flow) {
-  return flow === "income" ? data.categories.income : data.categories.expense;
+export function listOf(data: AppData, scope: LedgerScope, flow: Flow) {
+  const books = data.categories[scope];
+  return flow === "income" ? books.income : books.expense;
 }
 
 export interface TxInput {
@@ -31,6 +32,7 @@ export interface TxInput {
   accountId: string;
   toAccountId: string;
   note: string;
+  scope?: LedgerScope;
 }
 
 export function saveTransaction(data: AppData, input: TxInput): Result {
@@ -60,6 +62,7 @@ export function saveTransaction(data: AppData, input: TxInput): Result {
     toAccountId: input.type === "p" ? input.toAccountId : "",
     note: input.note.trim(),
     order: existing?.order,
+    scope: input.scope ?? existing?.scope ?? "family",
   };
   if (existing) Object.assign(existing, tx);
   else next.transactions.push(tx);
@@ -72,83 +75,83 @@ export function deleteTransaction(data: AppData, id: number): AppData {
   return next;
 }
 
-export function addCategory(data: AppData, flow: Flow, name: string): Result {
+export function addCategory(data: AppData, flow: Flow, name: string, scope: LedgerScope = "family"): Result {
   const trimmed = name.trim();
   if (!trimmed) return fail("Nhập tên");
   const next = copy(data);
-  const list = listOf(next, flow);
+  const list = listOf(next, scope, flow);
   if (list.some((category) => category.name === trimmed)) return fail("Đã có danh mục này");
   list.push({ name: trimmed, subs: [] });
   return { ok: true, data: next };
 }
 
-export function renameCategory(data: AppData, flow: Flow, oldName: string, newName: string): Result {
+export function renameCategory(data: AppData, flow: Flow, oldName: string, newName: string, scope: LedgerScope = "family"): Result {
   const trimmed = newName.trim();
   if (!trimmed || trimmed === oldName) return { ok: true, data };
   const next = copy(data);
-  const list = listOf(next, flow);
+  const list = listOf(next, scope, flow);
   if (list.some((category) => category.name === trimmed)) return fail("Đã có danh mục này");
   const category = list.find((item) => item.name === oldName);
   if (!category) return fail("Không tìm thấy danh mục");
   const type = flow === "income" ? "t" : "x";
   for (const tx of next.transactions) {
-    if (tx.type === type && tx.category === oldName) tx.category = trimmed;
+    if (tx.scope === scope && tx.type === type && tx.category === oldName) tx.category = trimmed;
   }
-  if (flow === "expense" && next.budgets[oldName]) {
-    next.budgets[trimmed] = next.budgets[oldName];
-    delete next.budgets[oldName];
+  if (flow === "expense" && next.budgets[scope][oldName]) {
+    next.budgets[scope][trimmed] = next.budgets[scope][oldName];
+    delete next.budgets[scope][oldName];
   }
   category.name = trimmed;
   return { ok: true, data: next };
 }
 
-export function deleteCategory(data: AppData, flow: Flow, name: string): AppData {
+export function deleteCategory(data: AppData, flow: Flow, name: string, scope: LedgerScope = "family"): AppData {
   const next = copy(data);
-  const list = listOf(next, flow);
+  const list = listOf(next, scope, flow);
   const index = list.findIndex((category) => category.name === name);
   if (index >= 0) list.splice(index, 1);
-  if (flow === "expense") delete next.budgets[name];
+  if (flow === "expense") delete next.budgets[scope][name];
   return next;
 }
 
-export function setCategoryColor(data: AppData, flow: Flow, name: string, color: string): AppData {
+export function setCategoryColor(data: AppData, flow: Flow, name: string, color: string, scope: LedgerScope = "family"): AppData {
   const next = copy(data);
-  const category = listOf(next, flow).find((item) => item.name === name);
+  const category = listOf(next, scope, flow).find((item) => item.name === name);
   if (category) category.color = color;
   return next;
 }
 
-export function addSub(data: AppData, flow: Flow, parent: string, name: string): Result {
+export function addSub(data: AppData, flow: Flow, parent: string, name: string, scope: LedgerScope = "family"): Result {
   const trimmed = name.trim();
   if (!trimmed) return fail("Nhập tên");
   const next = copy(data);
-  const category = listOf(next, flow).find((item) => item.name === parent);
+  const category = listOf(next, scope, flow).find((item) => item.name === parent);
   if (!category) return fail("Không tìm thấy danh mục");
   if (category.subs.includes(trimmed)) return fail("Đã có");
   category.subs.push(trimmed);
   return { ok: true, data: next };
 }
 
-export function renameSub(data: AppData, flow: Flow, parent: string, oldName: string, newName: string): Result {
+export function renameSub(data: AppData, flow: Flow, parent: string, oldName: string, newName: string, scope: LedgerScope = "family"): Result {
   const trimmed = newName.trim();
   if (!trimmed || trimmed === oldName) return { ok: true, data };
   const next = copy(data);
-  const category = listOf(next, flow).find((item) => item.name === parent);
+  const category = listOf(next, scope, flow).find((item) => item.name === parent);
   if (!category) return fail("Không tìm thấy danh mục");
   if (category.subs.includes(trimmed)) return fail("Đã có");
   const index = category.subs.indexOf(oldName);
   if (index < 0) return fail("Không tìm thấy danh mục con");
   const type = flow === "income" ? "t" : "x";
   for (const tx of next.transactions) {
-    if (tx.type === type && tx.category === parent && tx.sub === oldName) tx.sub = trimmed;
+    if (tx.scope === scope && tx.type === type && tx.category === parent && tx.sub === oldName) tx.sub = trimmed;
   }
   category.subs[index] = trimmed;
   return { ok: true, data: next };
 }
 
-export function deleteSub(data: AppData, flow: Flow, parent: string, name: string): AppData {
+export function deleteSub(data: AppData, flow: Flow, parent: string, name: string, scope: LedgerScope = "family"): AppData {
   const next = copy(data);
-  const category = listOf(next, flow).find((item) => item.name === parent);
+  const category = listOf(next, scope, flow).find((item) => item.name === parent);
   if (category) category.subs = category.subs.filter((sub) => sub !== name);
   return next;
 }
@@ -195,17 +198,17 @@ export function deleteAccount(data: AppData, id: string): Result {
   return { ok: true, data: next };
 }
 
-export function saveBudgets(data: AppData, texts: Record<string, string>): Result {
+export function saveBudgets(data: AppData, texts: Record<string, string>, scope: LedgerScope = "family"): Result {
   const next = copy(data);
   for (const [name, text] of Object.entries(texts)) {
     if (!text.trim()) {
-      delete next.budgets[name];
+      delete next.budgets[scope][name];
       continue;
     }
     const amount = parseAmount(text);
     if (amount === null) return fail(`Ngân sách "${name}" không hợp lệ`);
-    if (amount > 0) next.budgets[name] = amount;
-    else delete next.budgets[name];
+    if (amount > 0) next.budgets[scope][name] = amount;
+    else delete next.budgets[scope][name];
   }
   return { ok: true, data: next };
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { daySeries, monthSeries, type MonthPoint } from "./calc";
 import { formatVnd, monthLabel, shiftMonth } from "./money";
-import type { Transaction } from "./types";
+import { SCOPE_LABEL, type LedgerScope, type Transaction } from "./types";
 
 type Mode = "month" | "range";
 type Preset = "3" | "6" | "12" | "year";
@@ -13,25 +13,31 @@ const PRESETS: { id: Preset; label: string }[] = [
   { id: "year", label: "Cả năm" },
 ];
 
-export function ReportSheet({ transactions, endMonth, today, onClose }: { transactions: Transaction[]; endMonth: string; today: string; onClose: () => void }) {
+export function ReportSheet({ transactions, endMonth, today, initialScope, onClose }: { transactions: Transaction[]; endMonth: string; today: string; initialScope: LedgerScope; onClose: () => void }) {
   const [mode, setMode] = useState<Mode>("month");
+  const [scope, setScope] = useState<LedgerScope>(initialScope);
   const [dayMonth, setDayMonth] = useState(endMonth);
   const initial = rangeFor("6", endMonth);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
+  const scoped = transactions.filter((tx) => tx.scope === scope);
 
   return (
     <>
       <h3>📊 Báo cáo</h3>
       <div className="seg">
+        <button type="button" className={scope === "family" ? "on p" : ""} onClick={() => setScope("family")}>{SCOPE_LABEL.family}</button>
+        <button type="button" className={scope === "personal" ? "on p" : ""} onClick={() => setScope("personal")}>{SCOPE_LABEL.personal}</button>
+      </div>
+      <div className="seg">
         <button type="button" className={mode === "month" ? "on p" : ""} onClick={() => setMode("month")}>Theo tháng</button>
         <button type="button" className={mode === "range" ? "on p" : ""} onClick={() => setMode("range")}>Theo khoảng</button>
       </div>
-      <small className="hint">Chuyển khoản không tính là thu hay chi. Cột xanh là thu, cột đỏ là chi.</small>
+      <small className="hint">Đang xem sổ {SCOPE_LABEL[scope].toLowerCase()}. Chuyển khoản không tính là thu hay chi. Cột xanh là thu, cột đỏ là chi.</small>
       {mode === "month" ? (
-        <MonthDays transactions={transactions} month={dayMonth} today={today} onMonth={setDayMonth} />
+        <MonthDays transactions={scoped} month={dayMonth} today={today} onMonth={setDayMonth} />
       ) : (
-        <MonthRange transactions={transactions} endMonth={endMonth} from={from} to={to} onFrom={setFrom} onTo={setTo} />
+        <MonthRange transactions={scoped} endMonth={endMonth} from={from} to={to} onFrom={setFrom} onTo={setTo} />
       )}
       <div className="btns"><button type="button" className="b1" onClick={onClose}>Đóng</button></div>
     </>
