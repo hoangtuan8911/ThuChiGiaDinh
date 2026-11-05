@@ -6,7 +6,7 @@ import type { AppData } from "./types";
 function withTransaction(amount: number): AppData {
   const data = freshData();
   data.transactions = [
-    { id: 1, type: "x", date: "2026-11-04", amount, category: "Ăn uống", accountId: "a1" },
+    { id: 1, type: "x", date: "2026-11-04", amount, category: "Ăn uống", accountId: "a1", scope: "family" },
   ];
   return data;
 }

@@ -1,6 +1,12 @@
 export type AccountKind = "bank" | "ew" | "cash" | "cr";
 export type TxType = "t" | "x" | "p";
 export type Flow = "income" | "expense";
+export type LedgerScope = "family" | "personal";
+
+export const SCOPE_LABEL: Record<LedgerScope, string> = {
+  family: "Gia đình",
+  personal: "Cá nhân",
+};
 
 export interface Account {
   id: string;
@@ -30,12 +36,18 @@ export interface Transaction {
   note?: string;
   /** Thứ tự trong cùng ngày. Thiếu thì lấy id. Số lớn hơn hiện phía trên. */
   order?: number;
+  scope: LedgerScope;
+}
+
+export interface Books {
+  income: Category[];
+  expense: Category[];
 }
 
 export interface AppData {
-  version: 2;
-  categories: { income: Category[]; expense: Category[] };
-  budgets: Record<string, number>;
+  version: 3;
+  categories: Record<LedgerScope, Books>;
+  budgets: Record<LedgerScope, Record<string, number>>;
   accounts: Account[];
   transactions: Transaction[];
   lastBackup?: string;
