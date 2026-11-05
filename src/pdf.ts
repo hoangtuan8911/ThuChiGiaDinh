@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import { accountSnapshots, categorySpend, monthTotals, orderOf } from "./calc";
-import { formatFullDay, formatVnd, monthLabel, todayISO } from "./money";
+import { formatFullDay, formatVnd, monthLabel, shiftMonth, todayISO } from "./money";
 import type { AppData, Transaction } from "./types";
 
 const WEEKDAYS = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
@@ -32,6 +32,14 @@ export interface ReportDay {
   transfers: ReportEntry[];
 }
 
+export interface TrendPoint {
+  month: string;
+  label: string;
+  income: number;
+  expense: number;
+  current: boolean;
+}
+
 export interface MonthReport {
   heading: string;
   monthText: string;
@@ -42,8 +50,15 @@ export interface MonthReport {
   ratioBad: boolean;
   accounts: { name: string; value: string; detail: string }[];
   categories: { name: string; total: number; caption: string }[];
+  trend: TrendPoint[];
   days: ReportDay[];
 }
+
+export interface PdfOptions {
+  includeBalances: boolean;
+}
+
+const TREND_MONTHS = 6;
 
 export function buildMonthReport(data: AppData, month: string): MonthReport {
   const totals = monthTotals(data.transactions, month);
@@ -76,6 +91,17 @@ export function buildMonthReport(data: AppData, month: string): MonthReport {
     categories: categorySpend(data, month)
       .filter((row) => row.total > 0)
       .map((row) => ({ name: row.name, total: row.total, caption: row.tag ? `${row.caption} · ${row.tag}` : row.caption })),
+    trend: Array.from({ length: TREND_MONTHS }, (_, index) => {
+      const pointMonth = shiftMonth(month, index - (TREND_MONTHS - 1));
+      const point = monthTotals(data.transactions, pointMonth);
+      return {
+        month: pointMonth,
+        label: `${Number(pointMonth.slice(5, 7))}/${pointMonth.slice(2, 4)}`,
+        income: point.income,
+        expense: point.expense,
+        current: pointMonth === month,
+      };
+    }),
     days: [...days.keys()].sort().map((date) => {
       const rows = (days.get(date) ?? []).sort((a, b) => orderOf(b) - orderOf(a));
       const incomeRows = rows.filter((tx) => tx.type === "t").map((tx) => entry(data, tx));
@@ -93,7 +119,7 @@ export function buildMonthReport(data: AppData, month: string): MonthReport {
   };
 }
 
-export async function buildPdf(data: AppData, month: string, fontBase64: string): Promise<Blob> {
+export async function buildPdf(data: AppData, month: string, fontBase64: string, options: PdfOptions = { includeBalances: false }): Promise<Blob> {
   const report = buildMonthReport(data, month);
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   doc.addFileToVFS("Roboto-Regular.ttf", fontBase64);
@@ -156,6 +182,95 @@ export async function buildPdf(data: AppData, month: string, fontBase64: string)
     y += 8;
   };
 
+  const paintTrend = (points: TrendPoint[]) => {
+    const boxH = 64;
+    ensure(boxH + 2);
+    const top = y;
+    doc.setFillColor(250, 251, 253);
+    doc.setDrawColor(...LINE);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(margin, top, contentWidth, boxH, 1.6, 1.6, "FD");
+    useFont(8);
+    doc.setFillColor(...GREEN);
+    doc.circle(margin + 6, top + 5.2, 1.15, "F");
+    doc.setTextColor(...INK);
+    doc.text("Thu", margin + 9, top + 6.3);
+    doc.setFillColor(...RED);
+    doc.circle(margin + 24, top + 5.2, 1.15, "F");
+    doc.text("Chi", margin + 27, top + 6.3);
+    doc.setTextColor(...MUTED);
+    doc.text("6 tháng, tính đến tháng này", margin + contentWidth - 4, top + 6.3, { align: "right" });
+
+    const plotLeft = margin + 16;
+    const plotRight = margin + contentWidth - 6;
+    const plotTop = top + 12;
+    const plotBottom = top + 46;
+    const plotW = plotRight - plotLeft;
+    const plotH = plotBottom - plotTop;
+    const peak = Math.max(...points.map((point) => Math.max(point.income, point.expense)), 0);
+    const max = axisMax(peak);
+    const xAt = (index: number) => (points.length <= 1 ? (plotLeft + plotRight) / 2 : plotLeft + (index / (points.length - 1)) * plotW);
+    const yAt = (value: number) => plotBottom - (value / max) * plotH;
+
+    doc.setDrawColor(225, 230, 238);
+    doc.setLineWidth(0.15);
+    for (const tick of [0, 0.5, 1]) {
+      const gy = plotBottom - tick * plotH;
+      doc.line(plotLeft, gy, plotRight, gy);
+      if (peak === 0 && tick !== 0) continue;
+      useFont(7);
+      doc.setTextColor(...MUTED);
+      doc.text(tick === 0 ? "0" : compactVnd(max * tick), plotLeft - 1.6, gy + 0.8, { align: "right" });
+    }
+
+    const current = points.findIndex((point) => point.current);
+    if (current >= 0 && points.length > 1) {
+      const band = (plotW / (points.length - 1)) * 0.62;
+      let left = xAt(current) - band / 2;
+      if (left < plotLeft) left = plotLeft;
+      if (left + band > plotRight) left = plotRight - band;
+      doc.setFillColor(235, 242, 255);
+      doc.rect(left, plotTop, band, plotH, "F");
+      doc.setDrawColor(225, 230, 238);
+      doc.setLineWidth(0.15);
+      for (const tick of [0, 0.5, 1]) doc.line(plotLeft, plotBottom - tick * plotH, plotRight, plotBottom - tick * plotH);
+    }
+
+    const drawSeries = (key: "income" | "expense", color: readonly [number, number, number]) => {
+      doc.setDrawColor(color[0], color[1], color[2]);
+      doc.setLineWidth(0.55);
+      points.forEach((point, index) => {
+        if (index === 0) return;
+        const previous = points[index - 1];
+        doc.line(xAt(index - 1), yAt(previous[key]), xAt(index), yAt(point[key]));
+      });
+      points.forEach((point, index) => {
+        const x = xAt(index);
+        const py = yAt(point[key]);
+        doc.setFillColor(255, 255, 255);
+        doc.circle(x, py, point.current ? 1.7 : 1.25, "F");
+        doc.setFillColor(color[0], color[1], color[2]);
+        doc.circle(x, py, point.current ? 1.15 : 0.85, "F");
+      });
+    };
+    if (peak > 0) {
+      drawSeries("income", GREEN);
+      drawSeries("expense", RED);
+    } else {
+      useFont(8);
+      doc.setTextColor(...MUTED);
+      doc.text("Chưa có thu chi trong 6 tháng này.", plotLeft, plotTop + plotH / 2);
+    }
+
+    useFont(7.5);
+    points.forEach((point, index) => {
+      const labelColor = point.current ? NAVY : MUTED;
+      doc.setTextColor(labelColor[0], labelColor[1], labelColor[2]);
+      doc.text(point.label, xAt(index), plotBottom + 5, { align: "center" });
+    });
+    y = top + boxH + 3;
+  };
+
   doc.setFillColor(...NAVY);
   doc.rect(0, 0, pageWidth, 28, "F");
   doc.setFillColor(31, 111, 235);
@@ -169,12 +284,39 @@ export async function buildPdf(data: AppData, month: string, fontBase64: string)
   doc.text(`Ngày xuất ${formatFullDay(todayISO())}`, pageWidth - margin, 21, { align: "right" });
   y = 38;
 
+  if (options.includeBalances) {
+    section("Số dư tài khoản");
+    useFont(8);
+    doc.setFillColor(244, 247, 251);
+    doc.rect(margin, y, contentWidth, 6.5, "F");
+    doc.setTextColor(...MUTED);
+    doc.text("Tài khoản", margin + 2, y + 4.4);
+    doc.text("Số dư", margin + contentWidth - 2, y + 4.4, { align: "right" });
+    y += 6.5;
+    for (const account of report.accounts) {
+      ensure(10);
+      doc.setDrawColor(...LINE);
+      doc.setLineWidth(0.2);
+      doc.line(margin, y + 9.2, margin + contentWidth, y + 9.2);
+      useFont(10);
+      doc.setTextColor(...INK);
+      doc.text(clip(account.name, contentWidth - 48), margin + 2, y + 4.2);
+      doc.text(clip(account.value, 44), margin + contentWidth - 2, y + 4.2, { align: "right" });
+      useFont(8);
+      doc.setTextColor(...MUTED);
+      doc.text(clip(account.detail, contentWidth - 6), margin + 2, y + 8);
+      y += 9.4;
+    }
+  }
+
+  section("1. Tổng hợp thu chi");
   const boxWidth = (contentWidth - 6) / 3;
   const cards: { label: string; value: string; rgb: readonly [number, number, number] }[] = [
     { label: "Tổng thu", value: formatVnd(report.income), rgb: GREEN },
     { label: "Tổng chi", value: formatVnd(report.expense), rgb: RED },
     { label: "Còn lại", value: formatVnd(report.left), rgb: report.left < 0 ? RED : GREEN },
   ];
+  ensure(24);
   cards.forEach((card, index) => {
     const x = margin + index * (boxWidth + 3);
     doc.setDrawColor(card.rgb[0], card.rgb[1], card.rgb[2]);
@@ -190,33 +332,25 @@ export async function buildPdf(data: AppData, month: string, fontBase64: string)
   useFont(9);
   const ratioColor = report.ratioBad ? RED : MUTED;
   doc.setTextColor(ratioColor[0], ratioColor[1], ratioColor[2]);
-  doc.text(`Chi / Thu  ${report.ratioText}     Chuyển khoản không tính vào tổng thu và tổng chi.`, margin, y);
-  y += 4;
+  doc.text(`Chi / Thu  ${report.ratioText}`, margin, y);
+  y += 6;
 
-  section("Số dư tài khoản");
-  useFont(8);
-  doc.setFillColor(244, 247, 251);
-  doc.rect(margin, y, contentWidth, 6.5, "F");
-  doc.setTextColor(...MUTED);
-  doc.text("Tài khoản", margin + 2, y + 4.4);
-  doc.text("Số dư", margin + contentWidth - 2, y + 4.4, { align: "right" });
-  y += 6.5;
-  for (const account of report.accounts) {
-    ensure(10);
-    doc.setDrawColor(...LINE);
-    doc.setLineWidth(0.2);
-    doc.line(margin, y + 9.2, margin + contentWidth, y + 9.2);
-    useFont(10);
+  paintTrend(report.trend);
+  const compared = comparisonText(report);
+  if (compared) {
+    useFont(9);
+    const lines = doc.splitTextToSize(compared, contentWidth) as string[];
+    ensure(lines.length * 4.4 + 2);
     doc.setTextColor(...INK);
-    doc.text(clip(account.name, contentWidth - 48), margin + 2, y + 4.2);
-    doc.text(clip(account.value, 44), margin + contentWidth - 2, y + 4.2, { align: "right" });
-    useFont(8);
-    doc.setTextColor(...MUTED);
-    doc.text(clip(account.detail, contentWidth - 6), margin + 2, y + 8);
-    y += 9.4;
+    doc.text(lines, margin, y + 3);
+    y += lines.length * 4.4 + 2;
   }
 
-  section("Chi theo danh mục");
+  ensure(8);
+  useFont(10);
+  doc.setTextColor(...NAVY);
+  doc.text("Chi theo danh mục", margin, y + 4);
+  y += 6;
   if (report.categories.length === 0) {
     ensure(8);
     useFont(9);
@@ -247,11 +381,11 @@ export async function buildPdf(data: AppData, month: string, fontBase64: string)
     }
   }
 
-  section("Chi tiết theo ngày");
+  section("2. Chi tiết từng ngày");
   ensure(6);
   useFont(8);
   doc.setTextColor(...MUTED);
-  doc.text("Mỗi ngày có hai cột: thu bên trái, chi bên phải. Chuyển khoản nằm riêng phía dưới.", margin, y + 3);
+  doc.text("Thu ở cột trái, chi ở cột phải. Chuyển khoản nằm riêng và không tính vào tổng.", margin, y + 3);
   y += 6;
 
   if (report.days.length === 0) {
@@ -363,6 +497,40 @@ function kindLabel(kind: string): string {
   if (kind === "ew") return "Ví điện tử";
   if (kind === "cash") return "Tiền mặt";
   return "";
+}
+
+function comparisonText(report: MonthReport): string {
+  const current = report.trend.at(-1);
+  const previous = report.trend.at(-2);
+  if (!current || !previous) return "";
+  return `So với ${monthLabel(previous.month)}: thu ${changeWord(current.income - previous.income)}, chi ${changeWord(current.expense - previous.expense)}.`;
+}
+
+function changeWord(delta: number): string {
+  if (delta === 0) return "không đổi";
+  if (delta > 0) return `tăng ${formatVnd(delta)}`;
+  return `giảm ${formatVnd(-delta)}`;
+}
+
+function axisMax(value: number): number {
+  if (value <= 0) return 1;
+  const padded = value * 1.15;
+  const pow = 10 ** Math.floor(Math.log10(padded));
+  const n = padded / pow;
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return step * pow;
+}
+
+function compactVnd(value: number): string {
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${sign}${trimNum(abs / 1_000_000)}tr`;
+  if (abs >= 1_000) return `${sign}${trimNum(abs / 1_000)}k`;
+  return `${sign}${Math.round(abs)}`;
+}
+
+function trimNum(value: number): string {
+  return (value >= 10 ? value.toFixed(0) : value.toFixed(1)).replace(/\.0$/, "");
 }
 
 function weekday(iso: string): string {

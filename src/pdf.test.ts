@@ -27,6 +27,8 @@ describe("pdf", () => {
     data = add(data, "x", "50k", "2026-11-04", "Ăn uống", "sáng");
     data = add(data, "p", "3000000", "2026-11-04", "Chuyển khoản");
     data = add(data, "x", "1.5tr", "2026-11-15", "Nhà cửa");
+    data = add(data, "t", "10tr", "2026-10-02", "Lương");
+    data = add(data, "x", "2tr", "2026-10-08", "Ăn uống");
 
     const report = buildMonthReport(data, "2026-11");
     expect(report.heading).toBe("Thu Chi Gia Đình");
@@ -44,11 +46,17 @@ describe("pdf", () => {
     expect(fourth?.transfers[0]?.amount).toBe(3_000_000);
     expect(report.days[0]?.incomeRows[0]?.amount).toBe(30_000_000);
     expect(report.categories.find((row) => row.name === "Ăn uống")?.total).toBe(50_000);
+    expect(report.trend.map((point) => point.month)).toEqual(["2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"]);
+    expect(report.trend.at(-1)).toMatchObject({ income: 30_000_000, expense: 1_550_000, current: true, label: "11/26" });
+    expect(report.trend.at(-2)).toMatchObject({ income: 10_000_000, expense: 2_000_000, current: false });
+    expect(report.accounts.length).toBeGreaterThan(0);
 
     const font = readFileSync(new URL("./fonts/Roboto-Regular.ttf", import.meta.url)).toString("base64");
-    const text = await (await buildPdf(data, "2026-11", font)).text();
-    expect(text.startsWith("%PDF")).toBe(true);
-    expect(text).toContain("Roboto");
-    expect(text).not.toContain("/DCTDecode");
+    for (const includeBalances of [false, true]) {
+      const text = await (await buildPdf(data, "2026-11", font, { includeBalances })).text();
+      expect(text.startsWith("%PDF")).toBe(true);
+      expect(text).toContain("Roboto");
+      expect(text).not.toContain("/DCTDecode");
+    }
   });
 });
