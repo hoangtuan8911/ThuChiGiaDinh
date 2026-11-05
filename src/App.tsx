@@ -49,7 +49,7 @@ const HELP: { title: string; body: string }[] = [
   { title: "Ngân sách", body: "Hạn mức chi mỗi tháng cho từng danh mục cha. Dưới 80% bình thường, từ 80% đến 100% là Sát mức (cam), trên 100% là VƯỢT (đỏ)." },
   { title: "Cảnh báo màu", body: "Chi/Thu từ 90% tô cam, trên 100% tô đỏ. Còn lại âm và số dư âm có dấu ⚠. Thẻ còn dưới 20% hạn mức thì cam, âm thì đỏ." },
   { title: "Báo cáo", body: "Nút Báo cáo ở đầu trang. Theo tháng vẽ thu chi từng ngày. Theo khoảng vẽ từng tháng, chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc từ tháng đến tháng. Chuyển khoản không tính." },
-  { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang xuất báo cáo của tháng đang xem, khổ A4. Giao dịch được gom theo ngày: thu một cột, chi một cột." },
+  { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang hỏi có kèm số dư tài khoản hay không, rồi xuất báo cáo tháng đang xem, khổ A4. Phần 1 là tổng hợp thu chi và đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày: thu một cột, chi một cột." },
   { title: "Dữ liệu nằm trên máy này", body: "App không gửi số liệu đi đâu và không tự đồng bộ giữa các máy. Muốn chuyển máy: bấm Sao lưu, giữ file JSON, rồi Khôi phục trên máy kia." },
   { title: "Dữ liệu có thể mất", body: "Trên iPhone, Chrome, Safari và icon Màn hình chính là ba sổ khác nhau. Sổ nhập trong Chrome không hiện khi mở icon. Muốn đưa sang icon: trong Chrome bấm Sao lưu, mở icon, bấm Khôi phục. Sau đó chỉ nhập ở một chỗ. Tab Riêng tư, Zalo hoặc Facebook cũng là sổ khác." },
   { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
@@ -64,6 +64,7 @@ type Dialog =
   | { kind: "cats"; flow: Flow }
   | { kind: "budgets" }
   | { kind: "report" }
+  | { kind: "pdf" }
   | { kind: "help" }
   | { kind: "source" };
 
@@ -267,11 +268,12 @@ export function App() {
     }
   }
 
-  async function exportPdf() {
+  async function exportPdf(includeBalances: boolean) {
+    pop();
     try {
       const { buildPdf } = await import("./pdf");
       const font = await loadFont();
-      const blob = await buildPdf(dataRef.current, month, font);
+      const blob = await buildPdf(dataRef.current, month, font, { includeBalances });
       const filename = `thu-chi-${month}.pdf`;
       const file = new File([blob], filename, { type: "application/pdf" });
       if (canShareFile(file)) {
@@ -328,7 +330,7 @@ export function App() {
         <div className="head-tools">
           <button type="button" onClick={() => void backup()}>Sao lưu</button>
           <button type="button" onClick={() => fileRef.current?.click()}>Khôi phục</button>
-          <button type="button" onClick={() => void exportPdf()}>Xuất PDF</button>
+          <button type="button" onClick={() => push({ kind: "pdf" })}>Xuất PDF</button>
           <button type="button" onClick={() => push({ kind: "report" })}>Báo cáo</button>
           <input ref={fileRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void onRestoreFile(event)} />
         </div>
@@ -649,6 +651,7 @@ export function App() {
             />
           )}
           {dialog.kind === "report" && <ReportSheet transactions={data.transactions} endMonth={month} today={todayISO()} onClose={pop} />}
+          {dialog.kind === "pdf" && <PdfSheet month={month} onClose={pop} onExport={(includeBalances) => void exportPdf(includeBalances)} />}
           {dialog.kind === "help" && (
             <>
               <h3>❓ Hướng dẫn</h3>
@@ -668,6 +671,25 @@ export function App() {
         </Sheet>
       ))}
     </div>
+  );
+}
+
+function PdfSheet({ month, onClose, onExport }: { month: string; onClose: () => void; onExport: (includeBalances: boolean) => void }) {
+  const [balances, setBalances] = useState(false);
+  return (
+    <>
+      <h3>Xuất PDF</h3>
+      <small className="hint">Báo cáo {monthLabel(month)}. Phần 1 là tổng hợp thu chi, có đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày.</small>
+      <small className="hint">Số dư tài khoản</small>
+      <div className="seg">
+        <button type="button" className={balances ? "" : "on p"} onClick={() => setBalances(false)}>Không xuất</button>
+        <button type="button" className={balances ? "on p" : ""} onClick={() => setBalances(true)}>Xuất số dư</button>
+      </div>
+      <div className="btns">
+        <button type="button" className="b2" onClick={onClose}>Hủy</button>
+        <button type="button" className="b1" onClick={() => onExport(balances)}>Xuất</button>
+      </div>
+    </>
   );
 }
 
