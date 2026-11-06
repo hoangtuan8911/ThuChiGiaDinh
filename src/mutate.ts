@@ -39,8 +39,8 @@ export function saveTransaction(data: AppData, input: TxInput): Result {
   const amount = parseAmount(input.amountText);
   if (amount === null || amount <= 0) return fail("Số tiền không hợp lệ");
   if (!isIsoDate(input.date)) return fail("Chọn ngày");
-  if (!data.accounts.length || !input.accountId) return fail("Chưa có tài khoản — bấm 🏦 Tài khoản để thêm");
-  if (!data.accounts.some((account) => account.id === input.accountId)) return fail("Chọn tài khoản");
+  if (!data.accounts.length) return fail("Chưa có tài khoản — bấm 🏦 Tài khoản để thêm");
+  if (!input.accountId || !data.accounts.some((account) => account.id === input.accountId)) return fail("Chọn tài khoản");
   if (input.type === "p") {
     if (!input.toAccountId) return fail("Chọn tài khoản nhận");
     if (input.accountId === input.toAccountId) return fail("Chọn 2 tài khoản khác nhau");

@@ -89,13 +89,12 @@ export function App() {
   const [editing, setEditing] = useState<number | null>(null);
   const [type, setType] = useState<TxType>("x");
   const [rememberedType, setRememberedType] = useState<TxType>("x");
-  const [rememberedAccount, setRememberedAccount] = useState("a1");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayISO);
   const [category, setCategory] = useState("Ăn uống");
   const [sub, setSub] = useState("");
-  const [accountId, setAccountId] = useState("a1");
-  const [toAccountId, setToAccountId] = useState("a2");
+  const [accountId, setAccountId] = useState("");
+  const [toAccountId, setToAccountId] = useState("");
   const [note, setNote] = useState("");
   const formRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -170,10 +169,11 @@ export function App() {
     } catch {
       /* Máy không cho ghi thì chỉ đổi trong phiên này. */
     }
-    blank(rememberedType, rememberedAccount, dataRef.current, next);
+    blank(rememberedType, dataRef.current, next);
   }
 
-  function blank(nextType: TxType, nextAccount: string, book: AppData, nextScope: LedgerScope = scope) {
+  /** Nguồn tiền không có giá trị mặc định: bắt chọn lại mỗi lần để tránh lỡ tay chọn nhầm tài khoản. */
+  function blank(nextType: TxType, book: AppData, nextScope: LedgerScope = scope) {
     setEditing(null);
     setType(nextType);
     setAmount("");
@@ -182,9 +182,8 @@ export function App() {
     const names = nextType === "p" ? [] : listOf(book, nextScope, nextType === "t" ? "income" : "expense").map((item) => item.name);
     setCategory(names[0] ?? "");
     setSub("");
-    const account = book.accounts.some((item) => item.id === nextAccount) ? nextAccount : (book.accounts[0]?.id ?? "");
-    setAccountId(account);
-    setToAccountId((book.accounts.find((item) => item.kind === "cr") ?? book.accounts[0])?.id ?? "");
+    setAccountId("");
+    setToAccountId("");
   }
 
   function chooseType(next: TxType) {
@@ -207,7 +206,7 @@ export function App() {
     setCategory(tx.category);
     setSub(tx.sub ?? "");
     setAccountId(tx.accountId);
-    setToAccountId(tx.toAccountId || (dataRef.current.accounts.find((item) => item.kind === "cr") ?? dataRef.current.accounts[0])?.id || "");
+    setToAccountId(tx.toAccountId || "");
     setNote(tx.note ?? "");
     formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -230,10 +229,9 @@ export function App() {
       return;
     }
     const nextType = editing === null ? type : rememberedType;
-    setRememberedAccount(accountId);
     commit(result.data);
     setMonth(date.slice(0, 7));
-    blank(nextType, accountId, result.data);
+    blank(nextType, result.data);
   }
 
   function move(id: number, direction: -1 | 1) {
@@ -245,7 +243,7 @@ export function App() {
     const nextScope: LedgerScope = scope === "family" ? "personal" : "family";
     const next = moveTransaction(dataRef.current, id, nextScope);
     commit(next);
-    if (editing === id) blank(rememberedType, rememberedAccount, next, scope);
+    if (editing === id) blank(rememberedType, next, scope);
   }
 
   async function backup() {
@@ -283,7 +281,7 @@ export function App() {
           saveUndo(dataRef.current);
           setHasUndo(true);
           commit(next);
-          blank(rememberedType, rememberedAccount, next);
+          blank(rememberedType, next);
         },
       });
     } catch {
@@ -386,7 +384,7 @@ export function App() {
               setHasUndo(false);
               if (previous) {
                 commit(previous);
-                blank(rememberedType, rememberedAccount, previous);
+                blank(rememberedType, previous);
               }
             }}>Hoàn tác</button>
             <button type="button" onClick={() => { saveUndo(null); setHasUndo(false); }}>Giữ bản này</button>
@@ -508,6 +506,7 @@ export function App() {
             <div>
               <label>{accountLabel}</label>
               <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+                <option value="">— Chọn tài khoản —</option>
                 {data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
               </select>
             </div>
@@ -515,6 +514,7 @@ export function App() {
               <div>
                 <label>Đến tài khoản</label>
                 <select value={toAccountId} onChange={(event) => setToAccountId(event.target.value)}>
+                  <option value="">— Chọn tài khoản —</option>
                   {data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                 </select>
               </div>
@@ -523,7 +523,7 @@ export function App() {
           <label>Ghi chú</label>
           <input value={note} onChange={(event) => setNote(event.target.value)} />
           <div className="btns">
-            <button type="button" className="b2" onClick={() => blank(rememberedType, rememberedAccount, dataRef.current)}>{editing === null ? "Làm mới" : "Hủy sửa"}</button>
+            <button type="button" className="b2" onClick={() => blank(rememberedType, dataRef.current)}>{editing === null ? "Làm mới" : "Hủy sửa"}</button>
             {editing !== null && (
               <button type="button" className="b3" onClick={() => {
                 const id = editing;
@@ -533,7 +533,7 @@ export function App() {
                   onYes: () => {
                     const next = deleteTransaction(dataRef.current, id);
                     commit(next);
-                    blank(rememberedType, rememberedAccount, next);
+                    blank(rememberedType, next);
                   },
                 });
               }}>Xóa</button>
