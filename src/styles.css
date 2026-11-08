@@ -278,6 +278,7 @@ pre {
 }
 .gd p { margin: 6px 0; }
 .hint { color: var(--mu); display: block; margin-bottom: 4px; }
+.err { color: var(--chi); font-weight: 700; }
 .head-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .head-tools button {
   background: rgba(255, 255, 255, 0.2);

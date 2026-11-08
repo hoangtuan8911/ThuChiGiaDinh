@@ -30,6 +30,8 @@ import {
   type AccountInput,
   type Result,
 } from "./mutate";
+import { cloudConfig, currentEmail, pullBook, pushBook, readDirty, readStamp, signIn, signOut, signUp, writeDirty, writeStamp } from "./cloud";
+import { planSync } from "./cloudSync";
 import { normalize } from "./migrate";
 import { ReportSheet } from "./report";
 import { SOURCE } from "./source";
@@ -54,7 +56,8 @@ const HELP: { title: string; body: string }[] = [
   { title: "Cảnh báo màu", body: "Chi/Thu từ 90% tô cam, trên 100% tô đỏ. Còn lại âm và số dư âm có dấu ⚠. Thẻ còn dưới 20% hạn mức thì cam, âm thì đỏ." },
   { title: "Báo cáo", body: "Nút Báo cáo ở đầu trang. Chọn sổ Gia đình, Cá nhân, hoặc Tổng để xem cả hai sổ cộng lại. Theo tháng vẽ thu chi từng ngày. Theo khoảng vẽ từng tháng, chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc từ tháng đến tháng. Chuyển khoản không tính." },
   { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang chọn sổ Gia đình, Cá nhân, hoặc Tổng để xuất cả hai sổ cộng lại, và chọn có in số dư hay không. Phần 1 là tổng hợp thu chi và đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày." },
-  { title: "Dữ liệu nằm trên máy này", body: "App không gửi số liệu đi đâu và không tự đồng bộ giữa các máy. Muốn chuyển máy: bấm Sao lưu, giữ file JSON, rồi Khôi phục trên máy kia." },
+  { title: "Dữ liệu trên mây", body: "Nút Mây đăng nhập Supabase. Cùng email và mật khẩu trên điện thoại khác thì dùng chung một sổ. Máy vẫn giữ bản cục bộ khi mất mạng, và đẩy lên khi có mạng." },
+  { title: "Dữ liệu nằm trên máy này", body: "Khi chưa đăng nhập Mây, app không gửi số liệu đi đâu. Vẫn có thể Sao lưu ra file JSON rồi Khôi phục trên máy kia." },
   { title: "Dữ liệu có thể mất", body: "Trên iPhone, Chrome, Safari và icon Màn hình chính là ba sổ khác nhau. Sổ nhập trong Chrome không hiện khi mở icon. Muốn đưa sang icon: trong Chrome bấm Sao lưu, mở icon, bấm Khôi phục. Sau đó chỉ nhập ở một chỗ. Tab Riêng tư, Zalo hoặc Facebook cũng là sổ khác." },
   { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
 ];
@@ -70,7 +73,9 @@ type Dialog =
   | { kind: "report" }
   | { kind: "pdf" }
   | { kind: "help" }
-  | { kind: "source" };
+  | { kind: "source" }
+  | { kind: "cloud" }
+  | { kind: "cloud-pick"; remote: AppData; updatedAt: string };
 
 const loaded = loadAppData();
 
@@ -100,13 +105,58 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const taps = useRef<number[]>([]);
   const mirrorChecked = useRef(false);
+  const cloudReady = useRef(false);
+  const uploadGen = useRef(0);
   const saveErrorRef = useRef(saveError);
   saveErrorRef.current = saveError;
+  const [cloudEmail, setCloudEmail] = useState<string | null>(null);
 
   function commit(next: AppData) {
     dataRef.current = next;
     setData(next);
     setSaveError(saveAppData(next));
+    writeDirty(true);
+    if (cloudReady.current) void uploadCurrent();
+  }
+
+  function adoptRemote(book: AppData, updatedAt: string) {
+    dataRef.current = book;
+    setData(book);
+    setSaveError(saveAppData(book));
+    writeStamp(updatedAt);
+    writeDirty(false);
+  }
+
+  async function uploadCurrent(): Promise<string | null> {
+    if (!cloudConfig() || !(await currentEmail())) return null;
+    const gen = ++uploadGen.current;
+    const snapshot = dataRef.current;
+    const result = await pushBook(snapshot);
+    if (gen !== uploadGen.current) return null;
+    if (!result.ok) return result.error;
+    writeStamp(result.updatedAt);
+    if (dataRef.current === snapshot) writeDirty(false);
+    return null;
+  }
+
+  async function syncFromCloud(): Promise<string | null> {
+    const pulled = await pullBook();
+    if (!pulled.ok) return pulled.error;
+    const remote = pulled.remote;
+    const action = planSync({
+      localCount: dataRef.current.transactions.length,
+      remote: remote ? { updatedAt: remote.updatedAt, count: remote.book.transactions.length } : null,
+      syncedAt: readStamp(),
+      dirty: readDirty(),
+    });
+    if (action === "download" && remote) adoptRemote(remote.book, remote.updatedAt);
+    if (action === "upload") {
+      const error = await uploadCurrent();
+      if (readDirty()) return uploadCurrent();
+      return error;
+    }
+    if (action === "ask" && remote) push({ kind: "cloud-pick", remote: remote.book, updatedAt: remote.updatedAt });
+    return null;
   }
 
   function push(dialog: Dialog) {
@@ -127,7 +177,7 @@ export function App() {
 
   useEffect(() => {
     let cancel = false;
-    void loadMirror().then((mirror) => {
+    void loadMirror().then(async (mirror) => {
       if (cancel) return;
       if (mirror && mirror.revision > currentRevision()) {
         rememberRevision(mirror.revision);
@@ -136,6 +186,18 @@ export function App() {
         void mirrorCurrent(dataRef.current);
       }
       mirrorChecked.current = true;
+      const email = await currentEmail();
+      if (cancel) return;
+      setCloudEmail(email);
+      if (email) {
+        const error = await syncFromCloud();
+        if (error) setSaveError(error);
+      }
+      cloudReady.current = true;
+      if (readDirty() && email) {
+        const error = await uploadCurrent();
+        if (error) setSaveError(error);
+      }
     });
     const flush = () => {
       if (!mirrorChecked.current) return;
@@ -350,6 +412,7 @@ export function App() {
           </div>
         </div>
         <div className="head-tools">
+          <button type="button" onClick={() => push({ kind: "cloud" })}>Mây</button>
           <button type="button" onClick={() => void backup()}>Sao lưu</button>
           <button type="button" onClick={() => fileRef.current?.click()}>Khôi phục</button>
           <button type="button" onClick={() => push({ kind: "pdf" })}>Xuất PDF</button>
@@ -694,6 +757,35 @@ export function App() {
               <div className="btns"><button type="button" className="b1" onClick={pop}>Đóng</button></div>
             </>
           )}
+          {dialog.kind === "cloud" && (
+            <CloudSheet
+              email={cloudEmail}
+              onClose={pop}
+              onSignedIn={() => {
+                void (async () => {
+                  setCloudEmail(await currentEmail());
+                  pop();
+                  cloudReady.current = true;
+                  const error = await syncFromCloud();
+                  if (error) push({ kind: "msg", text: error });
+                })();
+              }}
+              onSignedOut={() => {
+                setCloudEmail(null);
+                pop();
+              }}
+            />
+          )}
+          {dialog.kind === "cloud-pick" && (
+            <>
+              <h3>Hai sổ khác nhau</h3>
+              <p>Máy này có {data.transactions.length} giao dịch. Mây có {dialog.remote.transactions.length} giao dịch. Chọn bản muốn giữ.</p>
+              <div className="btns">
+                <button type="button" className="b2" onClick={() => { adoptRemote(dialog.remote, dialog.updatedAt); pop(); }}>Dùng sổ trên mây</button>
+                <button type="button" className="b1" onClick={() => { pop(); void uploadCurrent().then((error) => { if (error) push({ kind: "msg", text: error }); }); }}>Đưa sổ máy này lên mây</button>
+              </div>
+            </>
+          )}
           {dialog.kind === "source" && (
             <>
               <h3>📄 Mã nguồn</h3>
@@ -704,6 +796,82 @@ export function App() {
         </Sheet>
       ))}
     </div>
+  );
+}
+
+function CloudSheet({ email, onClose, onSignedIn, onSignedOut }: { email: string | null; onClose: () => void; onSignedIn: () => void; onSignedOut: () => void }) {
+  const [mode, setMode] = useState<"in" | "up">("in");
+  const [address, setAddress] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!cloudConfig()) {
+    return (
+      <>
+        <h3>Đưa sổ lên Supabase</h3>
+        <div className="gd">
+          <p>1. Tạo project trên supabase.com.</p>
+          <p>2. Authentication, Providers, Email: tắt Confirm email.</p>
+          <p>3. SQL Editor: chạy file supabase/schema.sql.</p>
+          <p>4. Project Settings, API: copy Project URL và anon public key. Không dùng service_role.</p>
+          <p>5. Tạo file .env cạnh package.json với VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY, rồi chạy lại app. Trang GitHub thì thêm hai secret cùng tên cho Actions.</p>
+          <p>6. Bấm Mây, tạo một tài khoản. Điện thoại khác đăng nhập cùng email thì thấy sổ này.</p>
+        </div>
+        <div className="btns"><button type="button" className="b1" onClick={onClose}>Đóng</button></div>
+      </>
+    );
+  }
+  if (email) {
+    return (
+      <>
+        <h3>Mây</h3>
+        <p>Đang đăng nhập {email}. Mỗi lần lưu, sổ được đẩy lên Supabase. Máy khác dùng cùng tài khoản sẽ nhận sổ này khi mở app.</p>
+        <div className="btns">
+          <button type="button" className="b2" onClick={() => void signOut().then(onSignedOut)}>Đăng xuất</button>
+          <button type="button" className="b1" onClick={onClose}>Đóng</button>
+        </div>
+      </>
+    );
+  }
+  async function submit() {
+    if (password.length < 6) {
+      setError("Mật khẩu cần ít nhất 6 ký tự.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    if (mode === "in") {
+      const message = await signIn(address, password);
+      setBusy(false);
+      if (message) setError(message);
+      else onSignedIn();
+      return;
+    }
+    const created = await signUp(address, password);
+    setBusy(false);
+    if (created.error) {
+      setError(created.error);
+      return;
+    }
+    if (created.needsConfirm) {
+      setError("Đã tạo tài khoản. Mở email để xác nhận rồi đăng nhập, hoặc tắt Confirm email trên Supabase.");
+      return;
+    }
+    onSignedIn();
+  }
+  return (
+    <>
+      <h3>{mode === "in" ? "Đăng nhập mây" : "Tạo tài khoản mây"}</h3>
+      <label>Email</label>
+      <input type="email" autoComplete="username" value={address} onChange={(event) => setAddress(event.target.value)} />
+      <label>Mật khẩu</label>
+      <input type="password" autoComplete={mode === "in" ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} />
+      {error && <p className="err">{error}</p>}
+      <div className="btns">
+        <button type="button" className="b2" onClick={() => setMode(mode === "in" ? "up" : "in")}>{mode === "in" ? "Tạo tài khoản" : "Đã có tài khoản"}</button>
+        <button type="button" className="b1" disabled={busy} onClick={() => void submit()}>{busy ? "Đang làm…" : mode === "in" ? "Đăng nhập" : "Tạo"}</button>
+      </div>
+    </>
   );
 }
 
