@@ -48,7 +48,7 @@ const HELP: { title: string; body: string }[] = [
   { title: "Nhập liệu ngay trên trang chủ", body: "Chọn sổ Gia đình hoặc Cá nhân, rồi chọn Thu, Chi hoặc Chuyển. Số tiền gõ nhanh: 50k, 1.5tr, 150.000. Chọn ngày, danh mục rồi bấm Lưu." },
   { title: "Sửa, xóa, sắp xếp", body: "Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày. Nút Chuyển sang Cá nhân hoặc Gia đình đưa khoản đó sang sổ kia, kể cả khoản đã nhập từ trước." },
   { title: "Chuyển tháng", body: "Nút ◀ ▶ đổi tháng đang xem. Số dư tài khoản là số đến hiện tại, không phụ thuộc tháng." },
-  { title: "Ẩn số", body: "Tổng thu chi và số dư tài khoản được giấu. Bấm Xem khi cần nhìn, bấm Ẩn để giấu lại." },
+  { title: "Tổng thu chi và số dư", body: "Mở Menu rồi chọn Tổng thu chi hoặc Số dư tài khoản. Tổng thu chi theo tháng đang xem và sổ đang chọn. Số dư tài khoản là số đến hiện tại, dùng chung cho cả hai sổ." },
   { title: "Danh mục", body: "Mỗi sổ có danh mục riêng. Thêm, đổi tên, đổi màu, xóa danh mục cha và danh mục con của sổ đang chọn. Đổi tên cập nhật giao dịch cũ và ngân sách của sổ đó. Xóa danh mục không xóa giao dịch cũ." },
   { title: "Tài khoản", body: "Ngân hàng, ví điện tử, tiền mặt và thẻ tín dụng. Thẻ nhập dư nợ ban đầu và hạn mức. Khả dụng = hạn mức − dư nợ, không cộng vào số dư các tài khoản khác. Tài khoản đã có giao dịch thì không xóa được." },
   { title: "Chuyển khoản", body: "Dùng để trả thẻ hoặc chuyển giữa các tài khoản. Không tính là thu hay chi." },
@@ -74,6 +74,8 @@ type Dialog =
   | { kind: "pdf" }
   | { kind: "help" }
   | { kind: "menu" }
+  | { kind: "totals" }
+  | { kind: "balances" }
   | { kind: "source" }
   | { kind: "cloud" }
   | { kind: "cloud-pick"; remote: AppData; updatedAt: string };
@@ -89,8 +91,6 @@ export function App() {
   const [hasUndo, setHasUndo] = useState(() => loadUndo() !== null);
   const [storageEnv] = useState(() => readStorageEnv());
   const storageWarning = storageNotice({ ...storageEnv, hasEntries: data.transactions.length > 0 });
-  const [showTotals, setShowTotals] = useState(() => readFlag(SHOW_TOTALS_KEY));
-  const [showBalances, setShowBalances] = useState(() => readFlag(SHOW_BALANCES_KEY));
   const [dialogs, setDialogs] = useState<Dialog[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
   const [type, setType] = useState<TxType>("x");
@@ -539,35 +539,6 @@ export function App() {
             <button type="button" onClick={() => { saveUndo(null); setHasUndo(false); }}>Giữ bản này</button>
           </div>
         )}
-        <button type="button" className="peek" aria-expanded={showTotals} onClick={() => setShowTotals(toggleFlag(SHOW_TOTALS_KEY, showTotals))}>
-          <span>Tổng thu chi · {SCOPE_LABEL[scope]}</span>
-          <span>{showTotals ? "Ẩn" : "Xem"}</span>
-        </button>
-        {showTotals && (
-          <div className="grid gap">
-            <div className="c thu"><small>Tổng thu</small><div className="v">{formatVnd(totals.income)}</div></div>
-            <div className="c chi"><small>Tổng chi</small><div className="v">{formatVnd(totals.expense)}</div></div>
-            <div className={`c ${totals.left < 0 ? "bad" : "ok"}`}><small>Còn lại</small><div className="v">{totals.left < 0 ? "⚠ " : ""}{formatVnd(totals.left)}</div></div>
-            <div className={`c ${toneClass(totals.tone)}`}><small>Chi / Thu</small><div className="v">{totals.ratioText}{totals.ratioNote}</div></div>
-          </div>
-        )}
-        <button type="button" className="peek" aria-expanded={showBalances} onClick={() => setShowBalances(toggleFlag(SHOW_BALANCES_KEY, showBalances))}>
-          <span>Số dư tài khoản</span>
-          <span>{showBalances ? "Ẩn" : "Xem"}</span>
-        </button>
-        {showBalances && (
-          <div className="grid gap">
-            {snapshots.map((snapshot) => (
-              <div key={snapshot.account.id} className={`c ${toneClass(snapshot.tone)}`}>
-                <small>{KIND_ICON[snapshot.account.kind]} {snapshot.account.name}{snapshot.account.kind === "cr" ? " · khả dụng" : ""}</small>
-                <div className="v">{primaryText(snapshot)}</div>
-                {snapshot.debt !== null && (
-                  <small>Dư nợ {formatVnd(snapshot.debt)}{snapshot.account.limit ? ` / ${formatVnd(snapshot.account.limit)}` : ""}</small>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
         <div className="c fm gap" id="fm" ref={formRef}>
           <h3>{editing === null ? "Thêm giao dịch" : "Sửa giao dịch"}</h3>
           <div className="seg three">
@@ -834,6 +805,38 @@ export function App() {
           )}
           {dialog.kind === "report" && <ReportSheet transactions={data.transactions} endMonth={month} today={todayISO()} initialScope={scope} onClose={pop} />}
           {dialog.kind === "pdf" && <PdfSheet month={month} initialScope={scope} onClose={pop} onExport={(includeBalances, picked) => void exportPdf(includeBalances, picked)} />}
+          {dialog.kind === "totals" && (
+            <>
+              <h3>Tổng thu chi · {SCOPE_LABEL[scope]}</h3>
+              <small className="hint">{monthLabel(month)}</small>
+              <div className="grid">
+                <div className="c thu"><small>Tổng thu</small><div className="v">{formatVnd(totals.income)}</div></div>
+                <div className="c chi"><small>Tổng chi</small><div className="v">{formatVnd(totals.expense)}</div></div>
+                <div className={`c ${totals.left < 0 ? "bad" : "ok"}`}><small>Còn lại</small><div className="v">{totals.left < 0 ? "⚠ " : ""}{formatVnd(totals.left)}</div></div>
+                <div className={`c ${toneClass(totals.tone)}`}><small>Chi / Thu</small><div className="v">{totals.ratioText}{totals.ratioNote}</div></div>
+              </div>
+              <div className="btns"><button type="button" className="b1" onClick={pop}>Đóng</button></div>
+            </>
+          )}
+          {dialog.kind === "balances" && (
+            <>
+              <h3>Số dư tài khoản</h3>
+              <small className="hint">Số đến hiện tại, dùng chung cho cả hai sổ.</small>
+              {snapshots.length === 0 && <p>Chưa có tài khoản.</p>}
+              <div className="grid">
+                {snapshots.map((snapshot) => (
+                  <div key={snapshot.account.id} className={`c ${toneClass(snapshot.tone)}`}>
+                    <small>{KIND_ICON[snapshot.account.kind]} {snapshot.account.name}{snapshot.account.kind === "cr" ? " · khả dụng" : ""}</small>
+                    <div className="v">{primaryText(snapshot)}</div>
+                    {snapshot.debt !== null && (
+                      <small>Dư nợ {formatVnd(snapshot.debt)}{snapshot.account.limit ? ` / ${formatVnd(snapshot.account.limit)}` : ""}</small>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="btns"><button type="button" className="b1" onClick={pop}>Đóng</button></div>
+            </>
+          )}
           {dialog.kind === "menu" && (
             <MenuSheet
               onClose={pop}
@@ -905,6 +908,11 @@ function MenuSheet({ onClose, onPick, onBackup, onRestore }: {
   return (
     <>
       <h3>Menu</h3>
+      <p className="menu-label">Số liệu</p>
+      <div className="menu-list">
+        <button type="button" onClick={() => onPick({ kind: "totals" })}><span aria-hidden="true">💵</span> Tổng thu chi</button>
+        <button type="button" onClick={() => onPick({ kind: "balances" })}><span aria-hidden="true">💳</span> Số dư tài khoản</button>
+      </div>
       <p className="menu-label">Sổ</p>
       <div className="menu-list">
         <button type="button" onClick={() => onPick({ kind: "accounts" })}><span aria-hidden="true">🏦</span> Tài khoản</button>
@@ -1205,8 +1213,6 @@ function BudgetForm({ names, budgets, onCancel, onSave }: { names: string[]; bud
   );
 }
 
-const SHOW_TOTALS_KEY = "tcgd_show_totals";
-const SHOW_BALANCES_KEY = "tcgd_show_balances";
 const SCOPE_KEY = "tcgd_scope";
 
 function readScope(): LedgerScope {
@@ -1215,24 +1221,6 @@ function readScope(): LedgerScope {
   } catch {
     return "family";
   }
-}
-
-function readFlag(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function toggleFlag(key: string, current: boolean): boolean {
-  const next = !current;
-  try {
-    localStorage.setItem(key, next ? "1" : "0");
-  } catch {
-    // Máy không cho ghi thì vẫn đổi trên màn hình lần này.
-  }
-  return next;
 }
 
 function readStorageEnv(): Omit<Parameters<typeof storageNotice>[0], "hasEntries"> {
