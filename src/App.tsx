@@ -813,8 +813,8 @@ function CloudSheet({ email, onClose, onSignedIn, onSignedOut }: { email: string
           <p>1. Tạo project trên supabase.com.</p>
           <p>2. Authentication, Providers, Email: tắt Confirm email.</p>
           <p>3. SQL Editor: chạy file supabase/schema.sql.</p>
-          <p>4. Project Settings, API: copy Project URL và anon public key. Không dùng service_role.</p>
-          <p>5. Tạo file .env cạnh package.json với VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY, rồi chạy lại app. Trang GitHub thì thêm hai secret cùng tên cho Actions.</p>
+          <p>4. Bấm Connect ở trên cùng project. Copy Project URL, dạng https://xxxx.supabase.co. Trong Settings, API Keys, tab Publishable and secret: copy khóa bắt đầu bằng sb_publishable_. Đó là khóa anon mới. Không copy sb_secret_ hay service_role.</p>
+          <p>5. Tạo file .env cạnh package.json. Dán URL vào VITE_SUPABASE_URL và khóa publishable vào VITE_SUPABASE_ANON_KEY, rồi chạy lại app. Trang GitHub thì thêm hai secret cùng tên cho Actions.</p>
           <p>6. Bấm Mây, tạo một tài khoản. Điện thoại khác đăng nhập cùng email thì thấy sổ này.</p>
         </div>
         <div className="btns"><button type="button" className="b1" onClick={onClose}>Đóng</button></div>
