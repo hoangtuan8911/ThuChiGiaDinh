@@ -44,7 +44,7 @@ const KIND_ICON: Record<AccountKind, string> = { bank: "🏦", ew: "📱", cash:
 const BUILD_TIME = __BUILD_TIME__;
 
 const HELP: { title: string; body: string }[] = [
-  { title: "Hai sổ", body: "Nút Gia đình và Cá nhân ở đầu trang. Mỗi sổ có danh mục cha, danh mục con, ngân sách và giao dịch riêng. Số dư tài khoản là số chung của cả hai sổ." },
+  { title: "Hai sổ", body: "Nút Gia đình và Cá nhân nằm ở cuối màn hình và đi theo khi cuộn. Nền xanh lá là Gia đình, nền cam là Cá nhân. Mỗi sổ có danh mục cha, danh mục con, ngân sách và giao dịch riêng. Số dư tài khoản là số chung của cả hai sổ." },
   { title: "Nhập liệu ngay trên trang chủ", body: "Chọn sổ Gia đình hoặc Cá nhân, rồi chọn Thu, Chi hoặc Chuyển. Số tiền gõ nhanh: 50k, 1.5tr, 150.000. Chọn ngày, danh mục rồi bấm Lưu." },
   { title: "Sửa, xóa, sắp xếp", body: "Giao dịch của tuần này hiện ngay. Các tuần khác chỉ còn một dòng tổng thu và tổng chi, bấm Xem để mở. Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày. Nút Chuyển sang Cá nhân hoặc Gia đình đưa khoản đó sang sổ kia, kể cả khoản đã nhập từ trước." },
   { title: "Chuyển tháng", body: "Nút ◀ ▶ đổi tháng đang xem. Số dư tài khoản là số đến hiện tại, không phụ thuộc tháng." },
@@ -493,7 +493,7 @@ export function App() {
   }
 
   return (
-    <div className="page">
+    <div className={`page ${scope}`}>
       <header>
         <div className="top">
           <h1 onClick={onTitle}>💰 Thu Chi Gia Đình</h1>
@@ -507,10 +507,6 @@ export function App() {
             {cloudLine.detail && <small>{cloudLine.detail}</small>}
           </span>
         </button>
-        <div className="scope">
-          <button type="button" className={scope === "family" ? "on" : ""} onClick={() => chooseScope("family")}>Gia đình</button>
-          <button type="button" className={scope === "personal" ? "on" : ""} onClick={() => chooseScope("personal")}>Cá nhân</button>
-        </div>
         <div className="status" role="status">{saveError ? `⚠ ${saveError}` : `Đã lưu trên máy${data.lastBackup ? ` · sao lưu ${formatFullDay(data.lastBackup)}` : ""}`}</div>
         <div className="build-time">Cập nhật lúc: {formatDateTime(BUILD_TIME)}</div>
         <div className="mn">
@@ -734,6 +730,10 @@ export function App() {
           );
         })}
       </main>
+      <div className="scope-bar">
+        <button type="button" className={scope === "family" ? "on" : ""} onClick={() => chooseScope("family")}>Gia đình</button>
+        <button type="button" className={scope === "personal" ? "on" : ""} onClick={() => chooseScope("personal")}>Cá nhân</button>
+      </div>
       {dialogs.map((dialog, index) => (
         <Sheet key={index} onClose={pop}>
           {dialog.kind === "msg" && (
