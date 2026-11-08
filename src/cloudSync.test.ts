@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planSync } from "./cloudSync";
+import { cloudStatus, planSync } from "./cloudSync";
 
 describe("đồng bộ mây", () => {
   it("chưa có sổ trên mây thì đẩy sổ máy lên", () => {
@@ -28,5 +28,57 @@ describe("đồng bộ mây", () => {
 
   it("đã khớp thì giữ", () => {
     expect(planSync({ localCount: 3, remote: { updatedAt: "t2", count: 3 }, syncedAt: "t2", dirty: false })).toBe("ready");
+  });
+});
+
+describe("dòng trạng thái mây", () => {
+  const base = { configured: true, signedIn: true, online: true, syncing: false, failed: false, syncedLabel: "2026-11-08 11:49:00" };
+
+  it("chưa cấu hình thì báo chưa nối", () => {
+    expect(cloudStatus({ ...base, configured: false })).toEqual({ mode: "off", title: "Chưa nối Supabase", detail: "" });
+  });
+
+  it("chưa đăng nhập thì icon tắt và vẫn nhớ lần cuối", () => {
+    expect(cloudStatus({ ...base, signedIn: false })).toEqual({
+      mode: "off",
+      title: "Chưa đăng nhập",
+      detail: "Đồng bộ lần cuối 2026-11-08 11:49:00",
+    });
+  });
+
+  it("đang đồng bộ", () => {
+    expect(cloudStatus({ ...base, syncing: true }).mode).toBe("sync");
+  });
+
+  it("mất mạng thì hiện lần đồng bộ cuối", () => {
+    expect(cloudStatus({ ...base, online: false })).toEqual({
+      mode: "off",
+      title: "Mất kết nối Supabase",
+      detail: "Đồng bộ lần cuối 2026-11-08 11:49:00",
+    });
+  });
+
+  it("gọi mây lỗi cũng tính là mất kết nối", () => {
+    expect(cloudStatus({ ...base, failed: true }).mode).toBe("off");
+  });
+
+  it("đã nối thì hiện giờ đồng bộ lần cuối", () => {
+    expect(cloudStatus(base)).toEqual({
+      mode: "on",
+      title: "Đã kết nối Supabase",
+      detail: "Đồng bộ lần cuối 2026-11-08 11:49:00",
+    });
+  });
+
+  it("đã nối nhưng chưa từng đồng bộ", () => {
+    expect(cloudStatus({ ...base, syncedLabel: null }).detail).toBe("Chưa đồng bộ");
+  });
+
+  it("đang kiểm tra phiên thì chưa kết luận là mất kết nối", () => {
+    expect(cloudStatus({ ...base, signedIn: false, syncing: true, syncedLabel: null })).toEqual({
+      mode: "sync",
+      title: "Đang nối Supabase…",
+      detail: "",
+    });
   });
 });
