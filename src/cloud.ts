@@ -23,6 +23,9 @@ function db(): SupabaseClient | null {
   if (!client) {
     client = createClient(config.url, config.anonKey, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      global: {
+        fetch: (input, init) => fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(8000) }),
+      },
     });
   }
   return client;
