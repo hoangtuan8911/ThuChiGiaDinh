@@ -237,6 +237,53 @@ export function screenOrder(transactions: Transaction[], month?: string): Transa
     .sort((a, b) => b.date.localeCompare(a.date) || orderOf(b) - orderOf(a));
 }
 
+/** Thứ Hai đầu tuần của một ngày yyyy-mm-dd. Tuần tính từ thứ Hai đến Chủ nhật. */
+export function weekStart(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  const weekday = date.getDay();
+  const delta = weekday === 0 ? -6 : 1 - weekday;
+  date.setDate(date.getDate() + delta);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function addDays(iso: string, days: number): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(year, month - 1, day + days);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+export interface WeekBucket {
+  start: string;
+  end: string;
+  income: number;
+  expense: number;
+  transactions: Transaction[];
+}
+
+/** Gom giao dịch trong tháng theo tuần. Tuần đang chứa `today` được thêm vào dù chưa có giao dịch. */
+export function groupByWeek(transactions: Transaction[], month: string, today: string): { buckets: WeekBucket[]; currentStart: string | null } {
+  const buckets = new Map<string, WeekBucket>();
+  for (const tx of screenOrder(transactions, month)) {
+    const start = weekStart(tx.date);
+    const bucket = buckets.get(start) ?? { start, end: addDays(start, 6), income: 0, expense: 0, transactions: [] };
+    if (tx.type === "t") bucket.income += tx.amount;
+    if (tx.type === "x") bucket.expense += tx.amount;
+    bucket.transactions.push(tx);
+    buckets.set(start, bucket);
+  }
+  const currentStart = today.startsWith(month) ? weekStart(today) : null;
+  if (currentStart && !buckets.has(currentStart)) {
+    buckets.set(currentStart, { start: currentStart, end: addDays(currentStart, 6), income: 0, expense: 0, transactions: [] });
+  }
+  return {
+    buckets: [...buckets.values()].sort((a, b) => b.start.localeCompare(a.start)),
+    currentStart,
+  };
+}
+
 export function reportOrder(transactions: Transaction[], month: string): Transaction[] {
   return transactions
     .filter((tx) => tx.date.startsWith(month))

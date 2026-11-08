@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountSnapshots, backupAgeDays, categorySpend, daySeries, monthSeries, monthTotals, moveWithinDay, screenOrder } from "./calc";
+import { accountSnapshots, backupAgeDays, categorySpend, daySeries, groupByWeek, monthSeries, monthTotals, moveWithinDay, screenOrder, weekStart } from "./calc";
 import { freshData } from "./defaults";
 import { normalize } from "./migrate";
 import { parseAmount } from "./money";
@@ -153,6 +153,41 @@ describe("sắp xếp trong ngày", () => {
     expect(screenOrder(moved, "2026-11").map((item) => item.note)).toEqual(["C", "A", "B", "khác ngày"]);
     expect(moveWithinDay(moved, 3, -1).map((item) => item.order)).toEqual(moved.map((item) => item.order));
     expect(moved.find((item) => item.note === "khác ngày")?.order).toBeUndefined();
+  });
+});
+
+describe("gom theo tuần", () => {
+  const rows = [
+    tx({ id: 1, type: "x", date: "2026-11-08", amount: 20_000, accountId: "a1" }),
+    tx({ id: 2, type: "t", date: "2026-11-02", amount: 100_000, accountId: "a1" }),
+    tx({ id: 3, type: "x", date: "2026-11-01", amount: 50_000, accountId: "a1" }),
+    tx({ id: 4, type: "p", date: "2026-11-08", amount: 5_000, accountId: "a1" }),
+  ];
+
+  it("tuần bắt đầu từ thứ Hai", () => {
+    expect(weekStart("2026-11-08")).toBe("2026-11-02");
+    expect(weekStart("2026-11-02")).toBe("2026-11-02");
+    expect(weekStart("2026-11-01")).toBe("2026-10-26");
+  });
+
+  it("tuần này mở riêng, tuần trước chỉ còn tổng thu và chi", () => {
+    const grouped = groupByWeek(rows, "2026-11", "2026-11-08");
+    expect(grouped.currentStart).toBe("2026-11-02");
+    expect(grouped.buckets.map((bucket) => bucket.start)).toEqual(["2026-11-02", "2026-10-26"]);
+    expect(grouped.buckets[0]).toMatchObject({ income: 100_000, expense: 20_000 });
+    expect(grouped.buckets[0].transactions.map((item) => item.id)).toEqual([4, 1, 2]);
+    expect(grouped.buckets[1]).toMatchObject({ income: 0, expense: 50_000 });
+  });
+
+  it("tháng khác không có tuần hiện tại", () => {
+    const grouped = groupByWeek(rows, "2026-11", "2026-10-15");
+    expect(grouped.currentStart).toBeNull();
+    expect(grouped.buckets).toHaveLength(2);
+  });
+
+  it("tuần này chưa có giao dịch vẫn có một dòng", () => {
+    const grouped = groupByWeek([], "2026-11", "2026-11-08");
+    expect(grouped.buckets).toEqual([{ start: "2026-11-02", end: "2026-11-08", income: 0, expense: 0, transactions: [] }]);
   });
 });
 

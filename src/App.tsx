@@ -5,9 +5,9 @@ import {
   backupAgeDays,
   categoryColor,
   categorySpend,
+  groupByWeek,
   monthTotals,
   moveWithinDay,
-  screenOrder,
   type AccountSnapshot,
 } from "./calc";
 import fontUrl from "./fonts/Roboto-Regular.ttf?url";
@@ -46,7 +46,7 @@ const BUILD_TIME = __BUILD_TIME__;
 const HELP: { title: string; body: string }[] = [
   { title: "Hai sổ", body: "Nút Gia đình và Cá nhân ở đầu trang. Mỗi sổ có danh mục cha, danh mục con, ngân sách và giao dịch riêng. Số dư tài khoản là số chung của cả hai sổ." },
   { title: "Nhập liệu ngay trên trang chủ", body: "Chọn sổ Gia đình hoặc Cá nhân, rồi chọn Thu, Chi hoặc Chuyển. Số tiền gõ nhanh: 50k, 1.5tr, 150.000. Chọn ngày, danh mục rồi bấm Lưu." },
-  { title: "Sửa, xóa, sắp xếp", body: "Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày. Nút Chuyển sang Cá nhân hoặc Gia đình đưa khoản đó sang sổ kia, kể cả khoản đã nhập từ trước." },
+  { title: "Sửa, xóa, sắp xếp", body: "Giao dịch của tuần này hiện ngay. Các tuần khác chỉ còn một dòng tổng thu và tổng chi, bấm Xem để mở. Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày. Nút Chuyển sang Cá nhân hoặc Gia đình đưa khoản đó sang sổ kia, kể cả khoản đã nhập từ trước." },
   { title: "Chuyển tháng", body: "Nút ◀ ▶ đổi tháng đang xem. Số dư tài khoản là số đến hiện tại, không phụ thuộc tháng." },
   { title: "Tổng thu chi và số dư", body: "Mở Menu rồi chọn Tổng thu chi hoặc Số dư tài khoản. Tổng thu chi theo tháng đang xem và sổ đang chọn. Số dư tài khoản là số đến hiện tại, dùng chung cho cả hai sổ." },
   { title: "Danh mục", body: "Mỗi sổ có danh mục riêng. Thêm, đổi tên, đổi màu, xóa danh mục cha và danh mục con của sổ đang chọn. Đổi tên cập nhật giao dịch cũ và ngân sách của sổ đó. Xóa danh mục không xóa giao dịch cũ." },
@@ -92,6 +92,8 @@ export function App() {
   const [storageEnv] = useState(() => readStorageEnv());
   const storageWarning = storageNotice({ ...storageEnv, hasEntries: data.transactions.length > 0 });
   const [dialogs, setDialogs] = useState<Dialog[]>([]);
+  const [catsOpen, setCatsOpen] = useState(false);
+  const [weekOpen, setWeekOpen] = useState<Record<string, boolean>>({});
   const [editing, setEditing] = useState<number | null>(null);
   const [type, setType] = useState<TxType>("x");
   const [rememberedType, setRememberedType] = useState<TxType>("x");
@@ -462,7 +464,7 @@ export function App() {
   const totals = monthTotals(scopedTx, month);
   const snapshots = accountSnapshots(data);
   const spends = categorySpend(data, month, scope);
-  const rows = screenOrder(scopedTx, month);
+  const weeks = groupByWeek(scopedTx, month, todayISO());
   const colors = allCategories(data, scope);
   const age = backupAgeDays(data.lastBackup, todayISO());
   const flow: Flow | null = type === "t" ? "income" : type === "x" ? "expense" : null;
@@ -661,53 +663,76 @@ export function App() {
             <button type="button" className="b1" onClick={onSave}>Lưu</button>
           </div>
         </div>
-        <h2>Chi theo danh mục · {SCOPE_LABEL[scope]}</h2>
-        <div className="list">
-          {spends.length === 0 && <div className="empty">Chưa có khoản chi</div>}
-          {spends.map((row) => (
-            <div key={row.name} className={`cat ${row.tone === "bad" ? "ov" : ""}`}>
-              <div className="h">
-                <b>
-                  <i className="dot" style={{ background: categoryColor(colors, row.name) }} />
-                  {row.name}
-                  {row.tag && <span className={`tag ${row.tag === "VƯỢT" ? "ov" : "w"}`}>{row.tag}</span>}
-                </b>
-                <span className="amt x">{formatVnd(row.total)}</span>
+        <Fold
+          label="Chi tiết theo mục"
+          income={totals.income}
+          expense={totals.expense}
+          open={catsOpen}
+          onToggle={() => setCatsOpen((open) => !open)}
+        >
+          <div className="list">
+            {spends.length === 0 && <div className="empty">Chưa có khoản chi</div>}
+            {spends.map((row) => (
+              <div key={row.name} className={`cat ${row.tone === "bad" ? "ov" : ""}`}>
+                <div className="h">
+                  <b>
+                    <i className="dot" style={{ background: categoryColor(colors, row.name) }} />
+                    {row.name}
+                    {row.tag && <span className={`tag ${row.tag === "VƯỢT" ? "ov" : "w"}`}>{row.tag}</span>}
+                  </b>
+                  <span className="amt x">{formatVnd(row.total)}</span>
+                </div>
+                {row.caption && <small>{row.caption}</small>}
+                <div className={`bar ${row.tone === "bad" ? "ov" : row.tone === "warn" ? "wr2" : ""}`}>
+                  <i style={{ width: `${Math.min(100, row.percent)}%` }} />
+                </div>
+                {row.subs.map((child) => (
+                  <div key={child.name} className="sc"><span>↳ {child.name}</span><span>{formatVnd(child.total)}</span></div>
+                ))}
               </div>
-              {row.caption && <small>{row.caption}</small>}
-              <div className={`bar ${row.tone === "bad" ? "ov" : row.tone === "warn" ? "wr2" : ""}`}>
-                <i style={{ width: `${Math.min(100, row.percent)}%` }} />
-              </div>
-              {row.subs.map((child) => (
-                <div key={child.name} className="sc"><span>↳ {child.name}</span><span>{formatVnd(child.total)}</span></div>
-              ))}
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </Fold>
         <h2>Giao dịch · {SCOPE_LABEL[scope]}</h2>
-        <div className="list">
-          {rows.length === 0 && <div className="empty">Chưa có giao dịch trong sổ {SCOPE_LABEL[scope].toLowerCase()}. Nhập ở form phía trên.</div>}
-          {rows.map((tx) => (
-            <div key={tx.id} className="row" style={{ borderLeft: `4px solid ${tx.type === "p" ? "var(--pri)" : categoryColor(colors, tx.category)}` }} onClick={() => beginEdit(tx)}>
-              <div className="l">
-                <b>{tx.category}{tx.sub ? ` › ${tx.sub}` : ""}</b>
-                <small>
-                  {formatDay(tx.date)} · {accountName(data, tx.accountId)}
-                  {tx.type === "p" ? ` → ${accountName(data, tx.toAccountId)}` : ""}
-                  {tx.note ? ` · ${tx.note}` : ""}
-                </small>
-                <button type="button" className="jump" onClick={(event) => { event.stopPropagation(); moveScope(tx.id); }}>
-                  Chuyển sang {scope === "family" ? "Cá nhân" : "Gia đình"}
-                </button>
+        {weeks.buckets.length === 0 && <div className="list"><div className="empty">Chưa có giao dịch trong sổ {SCOPE_LABEL[scope].toLowerCase()}. Nhập ở form phía trên.</div></div>}
+        {weeks.buckets.map((bucket) => {
+          const open = weekOpen[bucket.start] ?? bucket.start === weeks.currentStart;
+          const label = bucket.start === weeks.currentStart ? "Tuần này" : `${formatDay(bucket.start)}–${formatDay(bucket.end)}`;
+          return (
+            <Fold
+              key={bucket.start}
+              label={label}
+              income={bucket.income}
+              expense={bucket.expense}
+              open={open}
+              onToggle={() => setWeekOpen((current) => ({ ...current, [bucket.start]: !open }))}
+            >
+              <div className="list">
+                {bucket.transactions.length === 0 && <div className="empty">Chưa có giao dịch trong tuần này.</div>}
+                {bucket.transactions.map((tx) => (
+                  <div key={tx.id} className="row" style={{ borderLeft: `4px solid ${tx.type === "p" ? "var(--pri)" : categoryColor(colors, tx.category)}` }} onClick={() => beginEdit(tx)}>
+                    <div className="l">
+                      <b>{tx.category}{tx.sub ? ` › ${tx.sub}` : ""}</b>
+                      <small>
+                        {formatDay(tx.date)} · {accountName(data, tx.accountId)}
+                        {tx.type === "p" ? ` → ${accountName(data, tx.toAccountId)}` : ""}
+                        {tx.note ? ` · ${tx.note}` : ""}
+                      </small>
+                      <button type="button" className="jump" onClick={(event) => { event.stopPropagation(); moveScope(tx.id); }}>
+                        Chuyển sang {scope === "family" ? "Cá nhân" : "Gia đình"}
+                      </button>
+                    </div>
+                    <span className={`amt ${tx.type}`}>{tx.type === "t" ? "+" : tx.type === "p" ? "⇄ " : "−"}{formatVnd(tx.amount)}</span>
+                    <span className="mv">
+                      <button type="button" aria-label="Đưa lên" onClick={(event) => { event.stopPropagation(); move(tx.id, -1); }}>▲</button>
+                      <button type="button" aria-label="Đưa xuống" onClick={(event) => { event.stopPropagation(); move(tx.id, 1); }}>▼</button>
+                    </span>
+                  </div>
+                ))}
               </div>
-              <span className={`amt ${tx.type}`}>{tx.type === "t" ? "+" : tx.type === "p" ? "⇄ " : "−"}{formatVnd(tx.amount)}</span>
-              <span className="mv">
-                <button type="button" aria-label="Đưa lên" onClick={(event) => { event.stopPropagation(); move(tx.id, -1); }}>▲</button>
-                <button type="button" aria-label="Đưa xuống" onClick={(event) => { event.stopPropagation(); move(tx.id, 1); }}>▼</button>
-              </span>
-            </div>
-          ))}
-        </div>
+            </Fold>
+          );
+        })}
       </main>
       {dialogs.map((dialog, index) => (
         <Sheet key={index} onClose={pop}>
@@ -895,6 +920,29 @@ export function App() {
           )}
         </Sheet>
       ))}
+    </div>
+  );
+}
+
+function Fold({ label, income, expense, open, onToggle, children }: {
+  label: string;
+  income: number;
+  expense: number;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className={open ? "fold open" : "fold"}>
+      <button type="button" className="sum-line" aria-expanded={open} onClick={onToggle}>
+        <span className="sum-label">{label}</span>
+        <span className="sum-amts">
+          <span className="amt t">+{formatVnd(income)}</span>
+          <span className="amt x">−{formatVnd(expense)}</span>
+        </span>
+        <span className="sum-act">{open ? "Ẩn" : "Xem"}</span>
+      </button>
+      {open && <div className="fold-body">{children}</div>}
     </div>
   );
 }
