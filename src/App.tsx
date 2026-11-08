@@ -54,11 +54,11 @@ const HELP: { title: string; body: string }[] = [
   { title: "Chuyển khoản", body: "Dùng để trả thẻ hoặc chuyển giữa các tài khoản. Không tính là thu hay chi." },
   { title: "Ngân sách", body: "Hạn mức chi mỗi tháng cho từng danh mục cha của sổ đang chọn. Dưới 80% bình thường, từ 80% đến 100% là Sát mức (cam), trên 100% là VƯỢT (đỏ)." },
   { title: "Cảnh báo màu", body: "Chi/Thu từ 90% tô cam, trên 100% tô đỏ. Còn lại âm và số dư âm có dấu ⚠. Thẻ còn dưới 20% hạn mức thì cam, âm thì đỏ." },
-  { title: "Báo cáo", body: "Nút Báo cáo ở đầu trang. Chọn sổ Gia đình, Cá nhân, hoặc Tổng để xem cả hai sổ cộng lại. Theo tháng vẽ thu chi từng ngày. Theo khoảng vẽ từng tháng, chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc từ tháng đến tháng. Chuyển khoản không tính." },
-  { title: "Xuất PDF", body: "Nút Xuất PDF ở đầu trang chọn sổ Gia đình, Cá nhân, hoặc Tổng để xuất cả hai sổ cộng lại, và chọn có in số dư hay không. Phần 1 là tổng hợp thu chi và đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày." },
-  { title: "Dữ liệu trên Supabase", body: "Sổ được lưu trên Supabase. Icon mây ở đầu trang: mây gạch chéo là mất kết nối, mây thường là đang nối. Dòng chữ bên cạnh cho biết lần đồng bộ gần nhất. Mất mạng thì máy vẫn giữ sổ và đẩy lên khi có mạng lại. Nút Mây để đăng nhập. Cùng email trên điện thoại khác thì dùng chung một sổ." },
-  { title: "Dữ liệu nằm trên máy này", body: "Khi chưa đăng nhập Mây, app không gửi số liệu đi đâu. Vẫn có thể Sao lưu ra file JSON rồi Khôi phục trên máy kia." },
-  { title: "Dữ liệu có thể mất", body: "Trên iPhone, Chrome, Safari và icon Màn hình chính là ba sổ khác nhau. Sổ nhập trong Chrome không hiện khi mở icon. Muốn đưa sang icon: trong Chrome bấm Sao lưu, mở icon, bấm Khôi phục. Sau đó chỉ nhập ở một chỗ. Tab Riêng tư, Zalo hoặc Facebook cũng là sổ khác." },
+  { title: "Báo cáo", body: "Mở Menu rồi chọn Báo cáo. Chọn sổ Gia đình, Cá nhân, hoặc Tổng để xem cả hai sổ cộng lại. Theo tháng vẽ thu chi từng ngày. Theo khoảng vẽ từng tháng, chọn 3 tháng, 6 tháng, 12 tháng, cả năm, hoặc từ tháng đến tháng. Chuyển khoản không tính." },
+  { title: "Xuất PDF", body: "Mở Menu rồi chọn Xuất PDF. Chọn sổ Gia đình, Cá nhân, hoặc Tổng để xuất cả hai sổ cộng lại, và chọn có in số dư hay không. Phần 1 là tổng hợp thu chi và đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày." },
+  { title: "Dữ liệu trên Supabase", body: "Sổ được lưu trên Supabase. Icon mây ở đầu trang: mây gạch chéo là mất kết nối, mây thường là đang nối. Dòng chữ bên cạnh cho biết lần đồng bộ gần nhất. Mất mạng thì máy vẫn giữ sổ và đẩy lên khi có mạng lại. Mở Menu rồi chọn Mây để đăng nhập. Cùng email trên điện thoại khác thì dùng chung một sổ." },
+  { title: "Dữ liệu nằm trên máy này", body: "Khi chưa đăng nhập Mây, app không gửi số liệu đi đâu. Vẫn có thể mở Menu, chọn Sao lưu ra file JSON rồi Khôi phục trên máy kia." },
+  { title: "Dữ liệu có thể mất", body: "Trên iPhone, Chrome, Safari và icon Màn hình chính là ba sổ khác nhau. Sổ nhập trong Chrome không hiện khi mở icon. Muốn đưa sang icon: trong Chrome mở Menu, bấm Sao lưu, mở icon, mở Menu, bấm Khôi phục. Sau đó chỉ nhập ở một chỗ. Tab Riêng tư, Zalo hoặc Facebook cũng là sổ khác." },
   { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
 ];
 
@@ -73,6 +73,7 @@ type Dialog =
   | { kind: "report" }
   | { kind: "pdf" }
   | { kind: "help" }
+  | { kind: "menu" }
   | { kind: "source" }
   | { kind: "cloud" }
   | { kind: "cloud-pick"; remote: AppData; updatedAt: string };
@@ -494,21 +495,9 @@ export function App() {
       <header>
         <div className="top">
           <h1 onClick={onTitle}>💰 Thu Chi Gia Đình</h1>
-          <div>
-            <button type="button" className="ib" onClick={() => push({ kind: "accounts" })}>🏦 Tài khoản</button>
-            <button type="button" className="ib" onClick={() => push({ kind: "cats", flow: "expense" })}>⚙ Danh mục</button>
-            <button type="button" className="ib" onClick={() => push({ kind: "budgets" })}>🎯 Ngân sách</button>
-            <button type="button" className="ib" onClick={() => push({ kind: "help" })}>❓ Hướng dẫn</button>
-          </div>
+          <button type="button" className="menu-btn" aria-haspopup="dialog" onClick={() => push({ kind: "menu" })}>☰ Menu</button>
         </div>
-        <div className="head-tools">
-          <button type="button" onClick={() => push({ kind: "cloud" })}>Mây</button>
-          <button type="button" onClick={() => void backup()}>Sao lưu</button>
-          <button type="button" onClick={() => fileRef.current?.click()}>Khôi phục</button>
-          <button type="button" onClick={() => push({ kind: "pdf" })}>Xuất PDF</button>
-          <button type="button" onClick={() => push({ kind: "report" })}>Báo cáo</button>
-          <input ref={fileRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void onRestoreFile(event)} />
-        </div>
+        <input ref={fileRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void onRestoreFile(event)} />
         <button type="button" className={`cloud-line ${cloudLine.mode}`} onClick={onCloudLine}>
           <CloudMark mode={cloudLine.mode} />
           <span className="cloud-copy">
@@ -845,6 +834,14 @@ export function App() {
           )}
           {dialog.kind === "report" && <ReportSheet transactions={data.transactions} endMonth={month} today={todayISO()} initialScope={scope} onClose={pop} />}
           {dialog.kind === "pdf" && <PdfSheet month={month} initialScope={scope} onClose={pop} onExport={(includeBalances, picked) => void exportPdf(includeBalances, picked)} />}
+          {dialog.kind === "menu" && (
+            <MenuSheet
+              onClose={pop}
+              onPick={(next) => { pop(); push(next); }}
+              onBackup={() => { pop(); void backup(); }}
+              onRestore={() => { fileRef.current?.click(); pop(); }}
+            />
+          )}
           {dialog.kind === "help" && (
             <>
               <h3>❓ Hướng dẫn</h3>
@@ -896,6 +893,40 @@ export function App() {
         </Sheet>
       ))}
     </div>
+  );
+}
+
+function MenuSheet({ onClose, onPick, onBackup, onRestore }: {
+  onClose: () => void;
+  onPick: (dialog: Dialog) => void;
+  onBackup: () => void;
+  onRestore: () => void;
+}) {
+  return (
+    <>
+      <h3>Menu</h3>
+      <p className="menu-label">Sổ</p>
+      <div className="menu-list">
+        <button type="button" onClick={() => onPick({ kind: "accounts" })}><span aria-hidden="true">🏦</span> Tài khoản</button>
+        <button type="button" onClick={() => onPick({ kind: "cats", flow: "expense" })}><span aria-hidden="true">⚙</span> Danh mục</button>
+        <button type="button" onClick={() => onPick({ kind: "budgets" })}><span aria-hidden="true">🎯</span> Ngân sách</button>
+      </div>
+      <p className="menu-label">Báo cáo</p>
+      <div className="menu-list">
+        <button type="button" onClick={() => onPick({ kind: "report" })}><span aria-hidden="true">📊</span> Báo cáo</button>
+        <button type="button" onClick={() => onPick({ kind: "pdf" })}><span aria-hidden="true">📄</span> Xuất PDF</button>
+      </div>
+      <p className="menu-label">Dữ liệu</p>
+      <div className="menu-list">
+        <button type="button" onClick={onBackup}><span aria-hidden="true">💾</span> Sao lưu</button>
+        <button type="button" onClick={onRestore}><span aria-hidden="true">📥</span> Khôi phục</button>
+        <button type="button" onClick={() => onPick({ kind: "cloud" })}><span aria-hidden="true">☁</span> Mây</button>
+      </div>
+      <div className="menu-list tail">
+        <button type="button" onClick={() => onPick({ kind: "help" })}><span aria-hidden="true">❓</span> Hướng dẫn</button>
+      </div>
+      <div className="btns"><button type="button" className="b2" onClick={onClose}>Đóng</button></div>
+    </>
   );
 }
 

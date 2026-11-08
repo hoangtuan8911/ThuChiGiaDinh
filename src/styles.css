@@ -53,16 +53,17 @@ header {
   color: #fff;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 14px 18px;
 }
-.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 h1 { font-size: 18px; margin: 0; cursor: pointer; user-select: none; white-space: nowrap; }
-.top > div:last-child { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 240px; }
-.ib {
+.menu-btn {
   background: rgba(255, 255, 255, 0.2);
   color: #fff;
   border: 0;
-  border-radius: 10px;
-  padding: 7px 11px;
-  font-size: 14px;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 15px;
+  font-weight: 700;
+  flex: none;
 }
 .cloud-line {
   display: flex;
@@ -301,16 +302,24 @@ pre {
 .gd p { margin: 6px 0; }
 .hint { color: var(--mu); display: block; margin-bottom: 4px; }
 .err { color: var(--chi); font-weight: 700; }
-.head-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.head-tools button {
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
-  border: 0;
-  border-radius: 10px;
-  padding: 7px 11px;
-  font-size: 14px;
+.menu-label { margin: 14px 0 6px; color: var(--mu); font-size: 12px; font-weight: 700; }
+.menu-list { display: flex; flex-direction: column; gap: 8px; }
+.menu-list.tail { margin-top: 14px; }
+.menu-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--bd);
+  background: var(--bg);
+  color: var(--tx);
+  font-size: 16px;
   font-weight: 700;
 }
+.menu-list button span { width: 1.4em; text-align: center; }
 .mn.sheet { margin: 8px 0 4px; }
 .mn.sheet b { color: var(--tx); }
 .mn.sheet button { background: var(--bd); color: var(--tx); }
