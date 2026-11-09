@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountSnapshots, backupAgeDays, categorySpend, daySeries, groupByWeek, monthSeries, monthTotals, moveWithinDay, screenOrder, weekStart } from "./calc";
+import { accountSnapshots, backupAgeDays, categorySpend, daySeries, groupByWeek, monthSeries, monthTotals, moveWithinDay, recentAmounts, screenOrder, weekStart } from "./calc";
 import { freshData } from "./defaults";
 import { normalize } from "./migrate";
 import { bumpAmount, editAmount, formatAmountTyping, parseAmount } from "./money";
@@ -79,6 +79,23 @@ describe("ô nhập số tiền", () => {
     expect(draft.ok).toBe(false);
     const saved = must(saveTransaction(data, { type: "x", amountText: "1.500.000", date: "2026-11-01", category: "Ăn uống", sub: "", accountId: "a1", toAccountId: "", note: "" }));
     expect(saved.transactions[0]?.amount).toBe(1_500_000);
+  });
+});
+
+describe("số đã nhập", () => {
+  it("ưu tiên số mới của đúng danh mục, không lấy sổ khác", () => {
+    const rows = [
+      tx({ id: 1, type: "x", date: "2026-11-01", amount: 20_000, accountId: "a1", category: "Ăn uống", sub: "Cà phê" }),
+      tx({ id: 2, type: "x", date: "2026-11-03", amount: 35_000, accountId: "a1", category: "Ăn uống", sub: "Cà phê" }),
+      tx({ id: 3, type: "x", date: "2026-11-02", amount: 35_000, accountId: "a1", category: "Ăn uống" }),
+      tx({ id: 4, type: "x", date: "2026-11-04", amount: 500_000, accountId: "a1", category: "Nhà cửa" }),
+      tx({ id: 5, type: "x", date: "2026-11-04", amount: 9_000, accountId: "a1", category: "Ăn uống", scope: "personal" }),
+      tx({ id: 6, type: "t", date: "2026-11-04", amount: 1_000_000, accountId: "a1", category: "Lương" }),
+    ];
+    expect(recentAmounts(rows, { scope: "family", type: "x", category: "Ăn uống", sub: "Cà phê" })).toEqual([35_000, 20_000]);
+    expect(recentAmounts(rows, { scope: "family", type: "x", category: "Ăn uống" })).toEqual([35_000, 20_000]);
+    expect(recentAmounts(rows, { scope: "family", type: "x", category: "Xăng xe" })).toEqual([500_000, 35_000, 20_000]);
+    expect(recentAmounts(rows, { scope: "personal", type: "x", category: "Ăn uống" })).toEqual([9_000]);
   });
 });
 

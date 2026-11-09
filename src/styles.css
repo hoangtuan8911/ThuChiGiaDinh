@@ -279,17 +279,18 @@ button.row { font-size: 15px; font-weight: 400; border-top: 0; border-left: 0; b
 .sc { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--mu); padding: 3px 0 0 8px; }
 .sm { background: var(--bd); color: var(--tx); padding: 6px 8px; font-size: 13px; border: 0; border-radius: 8px; }
 .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.money-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
-.money-keys button {
+.amt-picks { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+.amt-picks button {
   border: 1px solid var(--bd);
   background: var(--card);
   color: var(--tx);
-  border-radius: 10px;
-  min-height: 40px;
-  padding: 8px 4px;
-  font-size: 14px;
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 13px;
   font-weight: 700;
 }
+.amt-picks button.on { border-color: var(--pri); color: var(--pri); }
 .fm h3 { margin: 0 0 8px; font-size: 15px; }
 .fm label { margin: 8px 0 3px; }
 .fm .btns { margin-top: 12px; }

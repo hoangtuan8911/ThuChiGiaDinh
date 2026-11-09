@@ -1,6 +1,6 @@
 import { PALETTE } from "./defaults";
 import { formatVnd, shiftMonth } from "./money";
-import type { Account, AppData, Category, LedgerScope, ReportScope, Tone, Transaction } from "./types";
+import type { Account, AppData, Category, LedgerScope, ReportScope, Tone, Transaction, TxType } from "./types";
 
 export interface AccountSnapshot {
   account: Account;
@@ -317,6 +317,38 @@ export function categoryColor(categories: Category[], name: string): string {
 export function allCategories(data: AppData, scope: LedgerScope = "family"): Category[] {
   const books = data.categories[scope];
   return [...books.expense, ...books.income];
+}
+
+/**
+ * Số đã nhập, mới nhất trước, không trùng.
+ * Có danh mục thì lấy số của danh mục đó (ưu tiên đúng danh mục con). Chưa có thì lấy số cùng loại Thu/Chi/Chuyển.
+ */
+export function recentAmounts(
+  transactions: Transaction[],
+  query: { scope: LedgerScope; type: TxType; category?: string; sub?: string; limit?: number },
+): number[] {
+  const limit = query.limit ?? 6;
+  const pool = transactions
+    .filter((tx) => tx.scope === query.scope && tx.type === query.type && tx.amount > 0)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
+  const unique = (list: Transaction[]) => {
+    const seen = new Set<number>();
+    const out: number[] = [];
+    for (const tx of list) {
+      if (seen.has(tx.amount)) continue;
+      seen.add(tx.amount);
+      out.push(tx.amount);
+      if (out.length >= limit) break;
+    }
+    return out;
+  };
+  if (query.type !== "p" && query.category) {
+    const inCategory = pool.filter((tx) => tx.category === query.category);
+    const narrowed = query.sub ? inCategory.filter((tx) => (tx.sub ?? "") === query.sub) : inCategory;
+    const picked = unique(narrowed.length > 0 ? narrowed : inCategory);
+    if (picked.length > 0) return picked;
+  }
+  return unique(pool);
 }
 
 export function backupAgeDays(lastBackup: string | undefined, today: string): number | null {

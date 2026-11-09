@@ -36,7 +36,7 @@ export interface TxInput {
 }
 
 export function saveTransaction(data: AppData, input: TxInput): Result {
-  if (isAmountDraft(input.amountText)) return fail("Số còn dang dở. Bấm nghìn hoặc triệu.");
+  if (isAmountDraft(input.amountText)) return fail("Số còn dang dở. Gõ đủ số hoặc thêm k, tr.");
   const amount = parseAmount(input.amountText);
   if (amount === null || amount <= 0) return fail("Số tiền không hợp lệ");
   if (!isIsoDate(input.date)) return fail("Chọn ngày");
@@ -189,7 +189,7 @@ export function saveAccount(data: AppData, input: AccountInput): Result {
   const name = input.name.trim();
   if (!name) return fail("Nhập tên");
   if (isAmountDraft(input.openingText) || (input.kind === "cr" && isAmountDraft(input.limitText))) {
-    return fail("Số còn dang dở. Bấm nghìn hoặc triệu.");
+    return fail("Số còn dang dở. Gõ đủ số hoặc thêm k, tr.");
   }
   const opening = input.openingText.trim() ? parseAmount(input.openingText) : 0;
   if (opening === null) return fail("Số dư không hợp lệ");
@@ -229,7 +229,7 @@ export function saveBudgets(data: AppData, texts: Record<string, string>, scope:
       delete next.budgets[scope][name];
       continue;
     }
-    if (isAmountDraft(text)) return fail(`Ngân sách "${name}" còn dang dở. Bấm nghìn hoặc triệu.`);
+    if (isAmountDraft(text)) return fail(`Ngân sách "${name}" còn dang dở. Gõ đủ số hoặc thêm k, tr.`);
     const amount = parseAmount(text);
     if (amount === null) return fail(`Ngân sách "${name}" không hợp lệ`);
     if (amount > 0) next.budgets[scope][name] = amount;
