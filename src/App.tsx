@@ -11,7 +11,7 @@ import {
   type AccountSnapshot,
 } from "./calc";
 import fontUrl from "./fonts/Roboto-Regular.ttf?url";
-import { currentMonth, formatDateTime, formatDay, formatFullDay, formatSyncTime, formatVnd, monthLabel, shiftMonth, todayISO } from "./money";
+import { bumpAmount, currentMonth, editAmount, formatAmountTyping, formatDateTime, formatDay, formatFullDay, formatSyncTime, formatVnd, monthLabel, shiftMonth, todayISO } from "./money";
 import {
   addCategory,
   addSub,
@@ -45,7 +45,7 @@ const BUILD_TIME = __BUILD_TIME__;
 
 const HELP: { title: string; body: string }[] = [
   { title: "Hai sổ", body: "Nút Gia đình và Cá nhân nằm ở cuối màn hình và đi theo khi cuộn. Gia đình là nền sáng, Cá nhân là nền tối. Mỗi sổ có danh mục cha, danh mục con, ngân sách và giao dịch riêng. Số dư tài khoản là số chung của cả hai sổ." },
-  { title: "Nhập liệu ngay trên trang chủ", body: "Chọn sổ Gia đình hoặc Cá nhân, rồi chọn Thu, Chi hoặc Chuyển. Số tiền gõ nhanh: 50k, 1.5tr, 150.000. Chọn ngày, danh mục rồi bấm Lưu." },
+  { title: "Nhập liệu ngay trên trang chủ", body: "Chọn sổ Gia đình hoặc Cá nhân, rồi chọn Thu, Chi hoặc Chuyển. Số tiền tự có dấu chấm phần nghìn. Gõ 50 rồi bấm nghìn thành 50.000. Gõ 1,5 rồi bấm triệu thành 1.500.000. Vẫn gõ được 50k hoặc 1,5tr. Chọn ngày, danh mục rồi bấm Lưu." },
   { title: "Sửa, xóa, sắp xếp", body: "Giao dịch của tuần này hiện ngay. Các tuần khác chỉ còn một dòng tổng thu và tổng chi, bấm Xem để mở. Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày. Nút Chuyển sang Cá nhân hoặc Gia đình đưa khoản đó sang sổ kia, kể cả khoản đã nhập từ trước." },
   { title: "Chuyển tháng", body: "Nút ◀ ▶ đổi tháng đang xem. Số dư tài khoản là số đến hiện tại, không phụ thuộc tháng." },
   { title: "Tổng thu chi và số dư", body: "Mở Menu rồi chọn Tổng thu chi hoặc Số dư tài khoản. Tổng thu chi theo tháng đang xem và sổ đang chọn. Số dư tài khoản là số đến hiện tại, dùng chung cho cả hai sổ." },
@@ -340,7 +340,7 @@ export function App() {
   function beginEdit(tx: Transaction) {
     setEditing(tx.id);
     setType(tx.type);
-    setAmount(String(tx.amount));
+    setAmount(formatAmountTyping(String(tx.amount)));
     setDate(tx.date);
     setCategory(tx.category);
     setSub(tx.sub ?? "");
@@ -546,13 +546,18 @@ export function App() {
           </div>
           <div className="g2">
             <div>
-              <label>Số tiền (vd: 50k, 1.5tr)</label>
-              <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
+              <label htmlFor="amount">Số tiền</label>
+              <MoneyField id="amount" value={amount} onChange={setAmount} />
             </div>
             <div>
               <label>Ngày</label>
               <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
             </div>
+          </div>
+          <div className="money-keys">
+            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setAmount((value) => bumpAmount(value, "000"))}>000</button>
+            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setAmount((value) => bumpAmount(value, "k"))}>nghìn</button>
+            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setAmount((value) => bumpAmount(value, "tr"))}>triệu</button>
           </div>
           {type !== "p" && (
             <div className="g2">
@@ -1146,11 +1151,52 @@ function AccountsSheet({ data, onClose, onAdd, onEdit }: { data: AppData; onClos
   );
 }
 
+function MoneyField({ id, value, onChange }: { id?: string; value: string; onChange: (value: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const caret = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const pos = caret.current;
+    if (pos === null) {
+      if (document.activeElement === ref.current) {
+        const end = ref.current.value.length;
+        ref.current.setSelectionRange(end, end);
+      }
+      return;
+    }
+    caret.current = null;
+    ref.current.setSelectionRange(pos, pos);
+  }, [value]);
+
+  function onInput(event: ChangeEvent<HTMLInputElement>) {
+    const next = editAmount(value, event.target.value, event.target.selectionStart ?? event.target.value.length);
+    caret.current = next.cursor;
+    if (next.text === value) {
+      event.target.value = next.text;
+      event.target.setSelectionRange(next.cursor, next.cursor);
+      return;
+    }
+    onChange(next.text);
+  }
+
+  return (
+    <input
+      id={id}
+      ref={ref}
+      inputMode="decimal"
+      autoComplete="off"
+      value={value}
+      onChange={onInput}
+    />
+  );
+}
+
 function AccountForm({ initial, onCancel, onSave, onDelete }: { initial?: Account; onCancel: () => void; onSave: (input: AccountInput) => void; onDelete?: () => void }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<AccountKind>(initial?.kind ?? "bank");
-  const [opening, setOpening] = useState(initial?.opening ? String(initial.opening) : "");
-  const [limit, setLimit] = useState(initial?.limit ? String(initial.limit) : "");
+  const [opening, setOpening] = useState(initial?.opening ? formatAmountTyping(String(initial.opening)) : "");
+  const [limit, setLimit] = useState(initial?.limit ? formatAmountTyping(String(initial.limit)) : "");
   return (
     <>
       <h3>{initial ? "Sửa tài khoản" : "Thêm tài khoản"}</h3>
@@ -1164,11 +1210,21 @@ function AccountForm({ initial, onCancel, onSave, onDelete }: { initial?: Accoun
         <option value="cr">💳 Thẻ tín dụng</option>
       </select>
       <label>{kind === "cr" ? "Dư nợ ban đầu (đã chi, chưa trả)" : "Số dư ban đầu"}</label>
-      <input inputMode="decimal" value={opening} onChange={(event) => setOpening(event.target.value)} />
+      <MoneyField value={opening} onChange={setOpening} />
+      <div className="money-keys">
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setOpening((value) => bumpAmount(value, "000"))}>000</button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setOpening((value) => bumpAmount(value, "k"))}>nghìn</button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setOpening((value) => bumpAmount(value, "tr"))}>triệu</button>
+      </div>
       {kind === "cr" && (
         <>
           <label>Hạn mức</label>
-          <input inputMode="decimal" value={limit} onChange={(event) => setLimit(event.target.value)} />
+          <MoneyField value={limit} onChange={setLimit} />
+          <div className="money-keys">
+            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setLimit((value) => bumpAmount(value, "000"))}>000</button>
+            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setLimit((value) => bumpAmount(value, "k"))}>nghìn</button>
+            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setLimit((value) => bumpAmount(value, "tr"))}>triệu</button>
+          </div>
         </>
       )}
       <div className="btns">
@@ -1242,7 +1298,7 @@ function CategorySheet({ data, scope, flow, onFlow, onClose, onApply, onCommit, 
 }
 
 function BudgetForm({ names, budgets, onCancel, onSave }: { names: string[]; budgets: Record<string, number>; onCancel: () => void; onSave: (texts: Record<string, string>) => void }) {
-  const [texts, setTexts] = useState<Record<string, string>>(() => Object.fromEntries(names.map((name) => [name, budgets[name] ? String(budgets[name]) : ""])));
+  const [texts, setTexts] = useState<Record<string, string>>(() => Object.fromEntries(names.map((name) => [name, budgets[name] ? formatAmountTyping(String(budgets[name])) : ""])));
   return (
     <>
       <h3>🎯 Ngân sách tháng theo danh mục</h3>
@@ -1250,7 +1306,7 @@ function BudgetForm({ names, budgets, onCancel, onSave }: { names: string[]; bud
       {names.map((name) => (
         <div key={name}>
           <label>{name}</label>
-          <input inputMode="decimal" value={texts[name] ?? ""} onChange={(event) => setTexts((current) => ({ ...current, [name]: event.target.value }))} />
+          <MoneyField value={texts[name] ?? ""} onChange={(value) => setTexts((current) => ({ ...current, [name]: value }))} />
         </div>
       ))}
       <div className="btns">

@@ -1,5 +1,5 @@
 import type { Account, AppData, Flow, LedgerScope, Transaction, TxType } from "./types";
-import { isIsoDate, parseAmount } from "./money";
+import { isAmountDraft, isIsoDate, parseAmount } from "./money";
 
 export type Result = { ok: true; data: AppData } | { ok: false; error: string };
 
@@ -36,6 +36,7 @@ export interface TxInput {
 }
 
 export function saveTransaction(data: AppData, input: TxInput): Result {
+  if (isAmountDraft(input.amountText)) return fail("Số còn dang dở. Bấm nghìn hoặc triệu.");
   const amount = parseAmount(input.amountText);
   if (amount === null || amount <= 0) return fail("Số tiền không hợp lệ");
   if (!isIsoDate(input.date)) return fail("Chọn ngày");
@@ -187,6 +188,9 @@ export interface AccountInput {
 export function saveAccount(data: AppData, input: AccountInput): Result {
   const name = input.name.trim();
   if (!name) return fail("Nhập tên");
+  if (isAmountDraft(input.openingText) || (input.kind === "cr" && isAmountDraft(input.limitText))) {
+    return fail("Số còn dang dở. Bấm nghìn hoặc triệu.");
+  }
   const opening = input.openingText.trim() ? parseAmount(input.openingText) : 0;
   if (opening === null) return fail("Số dư không hợp lệ");
   let limit = 0;
@@ -225,6 +229,7 @@ export function saveBudgets(data: AppData, texts: Record<string, string>, scope:
       delete next.budgets[scope][name];
       continue;
     }
+    if (isAmountDraft(text)) return fail(`Ngân sách "${name}" còn dang dở. Bấm nghìn hoặc triệu.`);
     const amount = parseAmount(text);
     if (amount === null) return fail(`Ngân sách "${name}" không hợp lệ`);
     if (amount > 0) next.budgets[scope][name] = amount;

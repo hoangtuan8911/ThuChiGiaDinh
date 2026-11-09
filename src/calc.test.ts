@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { accountSnapshots, backupAgeDays, categorySpend, daySeries, groupByWeek, monthSeries, monthTotals, moveWithinDay, screenOrder, weekStart } from "./calc";
 import { freshData } from "./defaults";
 import { normalize } from "./migrate";
-import { parseAmount } from "./money";
+import { bumpAmount, editAmount, formatAmountTyping, parseAmount } from "./money";
 import { deleteAccount, moveTransaction, renameCategory, saveAccount, saveBudgets, saveTransaction } from "./mutate";
 import type { AppData, Transaction } from "./types";
 
@@ -31,6 +31,54 @@ describe("parseAmount", () => {
     expect(parseAmount("150000")).toBe(150_000);
     expect(parseAmount("abc")).toBeNull();
     expect(parseAmount("0")).toBe(0);
+  });
+});
+
+describe("ô nhập số tiền", () => {
+  it("tự thêm dấu chấm phần nghìn", () => {
+    expect(formatAmountTyping("1")).toBe("1");
+    expect(formatAmountTyping("1500")).toBe("1.500");
+    expect(formatAmountTyping("1500000")).toBe("1.500.000");
+    expect(formatAmountTyping("1.500.000")).toBe("1.500.000");
+    expect(formatAmountTyping("150,000")).toBe("150.000");
+    expect(formatAmountTyping("50k")).toBe("50.000");
+    expect(formatAmountTyping("1,5tr")).toBe("1.500.000");
+    expect(formatAmountTyping("1.5tr")).toBe("1.500.000");
+    expect(formatAmountTyping("1,5")).toBe("1,5");
+    expect(formatAmountTyping("1.")).toBe("1,");
+    expect(formatAmountTyping("1.5")).toBe("1,5");
+    expect(formatAmountTyping("1.500")).toBe("1.500");
+    expect(formatAmountTyping("1,5t")).toBe("1,5t");
+  });
+
+  it("xóa một số ở cuối không biến thành số lẻ", () => {
+    expect(formatAmountTyping("1.50", "1.500")).toBe("150");
+    expect(formatAmountTyping("15.00", "15.000")).toBe("1.500");
+    expect(editAmount("1.500", "1.50", 4)).toEqual({ text: "150", cursor: 3 });
+    expect(editAmount("1.500", "1.5000", 6)).toEqual({ text: "15.000", cursor: 6 });
+    expect(editAmount("1.500.000", "1.500000", 5)).toEqual({ text: "150.000", cursor: 3 });
+    expect(editAmount("50", "50,", 3)).toEqual({ text: "50,", cursor: 3 });
+    expect(editAmount("1,5", "1,5tr", 5)).toEqual({ text: "1.500.000", cursor: 9 });
+  });
+
+  it("nút 000, nghìn và triệu nhân đúng", () => {
+    expect(bumpAmount("", "000")).toBe("");
+    expect(bumpAmount("", "k")).toBe("1.000");
+    expect(bumpAmount("", "tr")).toBe("1.000.000");
+    expect(bumpAmount("50", "000")).toBe("50.000");
+    expect(bumpAmount("50", "k")).toBe("50.000");
+    expect(bumpAmount("50.000", "k")).toBe("50.000.000");
+    expect(bumpAmount("1,5", "tr")).toBe("1.500.000");
+    expect(bumpAmount("1,5", "k")).toBe("1.500");
+    expect(bumpAmount("50k", "tr")).toBe("50.000.000");
+  });
+
+  it("không lưu số đang gõ dở", () => {
+    const data = freshData();
+    const draft = saveTransaction(data, { type: "x", amountText: "1,5", date: "2026-11-01", category: "Ăn uống", sub: "", accountId: "a1", toAccountId: "", note: "" });
+    expect(draft.ok).toBe(false);
+    const saved = must(saveTransaction(data, { type: "x", amountText: "1.500.000", date: "2026-11-01", category: "Ăn uống", sub: "", accountId: "a1", toAccountId: "", note: "" }));
+    expect(saved.transactions[0]?.amount).toBe(1_500_000);
   });
 });
 
