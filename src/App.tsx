@@ -33,6 +33,7 @@ import {
 } from "./mutate";
 import { cloudConfig, currentEmail, pullBook, pushBook, readDirty, readStamp, signIn, signOut, signUp, writeDirty, writeStamp } from "./cloud";
 import { cloudStatus, planSync } from "./cloudSync";
+import { freshData } from "./defaults";
 import { normalize } from "./migrate";
 import { ReportSheet } from "./report";
 import { SOURCE } from "./source";
@@ -917,6 +918,11 @@ export function App() {
                 setSyncedAt(null);
                 setCloudFailed(false);
                 setCloudSyncing(false);
+                saveUndo(null);
+                setHasUndo(false);
+                const next = freshData();
+                commit(next);
+                blank(rememberedType, next);
                 pop();
               }}
             />
