@@ -341,6 +341,23 @@ input, select {
 .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .seg + .seg, .seg + .hint, .hint + .seg { margin-top: 8px; }
 .seg.three { grid-template-columns: repeat(3, 1fr); }
+.split-toggle {
+  width: 100%;
+  margin-top: 8px;
+  padding: 11px;
+  border-radius: 10px;
+  border: 2px solid var(--bd);
+  background: var(--bg);
+  color: var(--tx);
+  font-size: 15px;
+  font-weight: 700;
+}
+.split-toggle.on { border-color: var(--thu); background: var(--thu-bg); color: var(--thu); }
+.share { margin-top: 10px; padding: 10px; border-radius: 12px; border: 1px solid var(--bd); background: var(--bg); }
+.share.family { border-color: #166534; }
+.share.personal { border-color: #c2410c; }
+.share > b { display: block; font-size: 14px; }
+.share-total { margin-top: 8px; font-weight: 700; }
 .seg button {
   padding: 11px;
   border-radius: 10px;

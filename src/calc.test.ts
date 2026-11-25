@@ -3,7 +3,7 @@ import { accountSnapshots, backupAgeDays, categorySpend, daySeries, groupByWeek,
 import { freshData } from "./defaults";
 import { normalize } from "./migrate";
 import { bumpAmount, editAmount, formatAmountTyping, parseAmount } from "./money";
-import { deleteAccount, moveTransaction, renameCategory, saveAccount, saveBudgets, saveTransaction } from "./mutate";
+import { deleteAccount, moveTransaction, renameCategory, saveAccount, saveBudgets, saveSplitIncome, saveTransaction } from "./mutate";
 import type { AppData, Transaction } from "./types";
 
 function must<T extends { ok: true; data: AppData } | { ok: false; error: string }>(result: T): AppData {
@@ -96,6 +96,38 @@ describe("số đã nhập", () => {
     expect(recentAmounts(rows, { scope: "family", type: "x", category: "Ăn uống" })).toEqual([35_000, 20_000]);
     expect(recentAmounts(rows, { scope: "family", type: "x", category: "Xăng xe" })).toEqual([500_000, 35_000, 20_000]);
     expect(recentAmounts(rows, { scope: "personal", type: "x", category: "Ăn uống" })).toEqual([9_000]);
+  });
+});
+
+describe("chia lương", () => {
+  it("một tài khoản tăng đúng tổng, mỗi sổ chỉ tính phần của mình", () => {
+    const saved = saveSplitIncome(freshData(), {
+      familyAmount: "20tr",
+      personalAmount: "10tr",
+      familyCategory: "Lương",
+      personalCategory: "Lương",
+      accountId: "a1",
+      date: "2026-11-05",
+      note: "lương tháng 11",
+    });
+    const data = must(saved);
+    const family = data.transactions.find((tx) => tx.scope === "family");
+    const personal = data.transactions.find((tx) => tx.scope === "personal");
+    expect(family).toMatchObject({ type: "t", amount: 20_000_000, category: "Lương", accountId: "a1", note: "lương tháng 11 · Gia đình" });
+    expect(personal).toMatchObject({ type: "t", amount: 10_000_000, category: "Lương", accountId: "a1", note: "lương tháng 11 · Cá nhân" });
+    expect(family?.id).not.toBe(personal?.id);
+    expect(accountSnapshots(data).find((item) => item.account.id === "a1")?.available).toBe(30_000_000);
+    expect(monthTotals(data.transactions.filter((tx) => tx.scope === "family"), "2026-11").income).toBe(20_000_000);
+    expect(monthTotals(data.transactions.filter((tx) => tx.scope === "personal"), "2026-11").income).toBe(10_000_000);
+    expect(saveSplitIncome(freshData(), {
+      familyAmount: "1,5",
+      personalAmount: "10tr",
+      familyCategory: "Lương",
+      personalCategory: "Lương",
+      accountId: "a1",
+      date: "2026-11-05",
+      note: "",
+    }).ok).toBe(false);
   });
 });
 

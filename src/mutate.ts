@@ -70,6 +70,61 @@ export function saveTransaction(data: AppData, input: TxInput): Result {
   return { ok: true, data: next };
 }
 
+export interface SplitIncomeInput {
+  familyAmount: string;
+  personalAmount: string;
+  familyCategory: string;
+  personalCategory: string;
+  accountId: string;
+  date: string;
+  note: string;
+}
+
+/** Một khoản thu về một tài khoản, tách thành hai sổ. Số dư tăng đúng một lần bằng tổng hai phần. */
+export function saveSplitIncome(data: AppData, input: SplitIncomeInput): Result {
+  const familyError = splitAmountError(input.familyAmount, "Gia đình");
+  if (familyError) return fail(familyError);
+  const personalError = splitAmountError(input.personalAmount, "Cá nhân");
+  if (personalError) return fail(personalError);
+  if (!input.familyCategory || input.familyCategory === "__new__") return fail("Chọn danh mục Gia đình");
+  if (!input.personalCategory || input.personalCategory === "__new__") return fail("Chọn danh mục Cá nhân");
+  const family = saveTransaction(data, {
+    type: "t",
+    amountText: input.familyAmount,
+    date: input.date,
+    category: input.familyCategory,
+    sub: "",
+    accountId: input.accountId,
+    toAccountId: "",
+    note: splitNote(input.note, "Gia đình"),
+    scope: "family",
+  });
+  if (!family.ok) return family;
+  return saveTransaction(family.data, {
+    type: "t",
+    amountText: input.personalAmount,
+    date: input.date,
+    category: input.personalCategory,
+    sub: "",
+    accountId: input.accountId,
+    toAccountId: "",
+    note: splitNote(input.note, "Cá nhân"),
+    scope: "personal",
+  });
+}
+
+function splitAmountError(text: string, book: string): string | null {
+  if (isAmountDraft(text)) return `Số ${book} còn dang dở. Gõ đủ số hoặc thêm k, tr.`;
+  const amount = parseAmount(text);
+  if (amount === null || amount <= 0) return `Số ${book} không hợp lệ`;
+  return null;
+}
+
+function splitNote(note: string, book: string): string {
+  const trimmed = note.trim();
+  return trimmed ? `${trimmed} · ${book}` : `Phần ${book.toLowerCase()}`;
+}
+
 export function deleteTransaction(data: AppData, id: number): AppData {
   const next = copy(data);
   next.transactions = next.transactions.filter((tx) => tx.id !== id);

@@ -27,6 +27,7 @@ import {
   renameSub,
   saveAccount,
   saveBudgets,
+  saveSplitIncome,
   saveTransaction,
   setCategoryColor,
   type AccountInput,
@@ -48,6 +49,7 @@ const BUILD_TIME = __BUILD_TIME__;
 const HELP: { title: string; body: string }[] = [
   { title: "Hai sổ", body: "Nút Gia đình và Cá nhân nằm ở cuối màn hình và đi theo khi cuộn. Gia đình là nền sáng, Cá nhân là nền tối. Mỗi sổ có danh mục cha, danh mục con, ngân sách và giao dịch riêng. Số dư tài khoản là số chung của cả hai sổ." },
   { title: "Nhập liệu ngay trên trang chủ", body: "Chọn sổ Gia đình hoặc Cá nhân, rồi chọn Thu, Chi hoặc Chuyển. Chọn danh mục và tài khoản trước. Số tiền ở cuối, tự có dấu chấm phần nghìn. Các số đã nhập của danh mục đó hiện phía trên ô tiền, bấm để điền lại. Vẫn gõ được 50k hoặc 1,5tr." },
+  { title: "Chia lương", body: "Bấm Thu, rồi Chia lương hai sổ. Nhập phần Gia đình và phần Cá nhân, chọn cùng một tài khoản. Tiền trong tài khoản tăng bằng tổng hai phần, chỉ một lần. Sổ Gia đình chỉ tính phần gia đình. Sổ Cá nhân chỉ tính phần cá nhân. Muốn sửa hoặc xóa thì vào đúng sổ của phần đó." },
   { title: "Sửa, xóa, sắp xếp", body: "Giao dịch của tuần này hiện ngay. Các tuần khác chỉ còn một dòng tổng thu và tổng chi, bấm Xem để mở. Chạm một giao dịch để đưa lên form. ▲ ▼ đổi chỗ với giao dịch liền kề trong cùng ngày. Nút Chuyển sang Cá nhân hoặc Gia đình đưa khoản đó sang sổ kia, kể cả khoản đã nhập từ trước." },
   { title: "Chuyển tháng", body: "Nút ◀ ▶ đổi tháng đang xem. Số dư tài khoản là số đến hiện tại, không phụ thuộc tháng." },
   { title: "Tổng thu chi và số dư", body: "Mở Menu rồi chọn Tổng thu chi hoặc Số dư tài khoản. Tổng thu chi theo tháng đang xem và sổ đang chọn. Số dư tài khoản là số đến hiện tại, dùng chung cho cả hai sổ." },
@@ -107,6 +109,11 @@ export function App() {
   const [accountId, setAccountId] = useState("");
   const [toAccountId, setToAccountId] = useState("");
   const [note, setNote] = useState("");
+  const [split, setSplit] = useState(false);
+  const [familyAmount, setFamilyAmount] = useState("");
+  const [personalAmount, setPersonalAmount] = useState("");
+  const [familyCategory, setFamilyCategory] = useState("Lương");
+  const [personalCategory, setPersonalCategory] = useState("Lương");
   const formRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const taps = useRef<number[]>([]);
@@ -326,10 +333,14 @@ export function App() {
     setSub("");
     setAccountId("");
     setToAccountId("");
+    setSplit(false);
+    setFamilyAmount("");
+    setPersonalAmount("");
   }
 
   function chooseType(next: TxType) {
     setType(next);
+    if (next !== "t") setSplit(false);
     if (editing === null) setRememberedType(next);
     if (next === "p") return;
     const flow: Flow = next === "t" ? "income" : "expense";
@@ -353,7 +364,34 @@ export function App() {
     formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  function toggleSplit() {
+    if (!split) {
+      setFamilyCategory(incomeName(dataRef.current, "family"));
+      setPersonalCategory(incomeName(dataRef.current, "personal"));
+    }
+    setSplit((on) => !on);
+  }
+
   function onSave() {
+    if (type === "t" && editing === null && split) {
+      const result = saveSplitIncome(dataRef.current, {
+        familyAmount,
+        personalAmount,
+        familyCategory,
+        personalCategory,
+        accountId,
+        date,
+        note,
+      });
+      if (!result.ok) {
+        push({ kind: "msg", text: result.error });
+        return;
+      }
+      commit(result.data);
+      setMonth(date.slice(0, 7));
+      blank("t", result.data);
+      return;
+    }
     const result = saveTransaction(dataRef.current, {
       id: editing ?? undefined,
       type,
@@ -494,6 +532,12 @@ export function App() {
   const accountLabel = type === "t" ? "Vào tài khoản" : type === "x" ? "Chi từ tài khoản" : "Từ tài khoản";
   const suggestions = recentAmounts(data.transactions, { scope, type, category, sub });
   const typedAmount = parseAmount(amount);
+  const splitting = type === "t" && editing === null && split;
+  const familyNames = listOf(data, "family", "income").map((item) => item.name);
+  const personalNames = listOf(data, "personal", "income").map((item) => item.name);
+  const familyPart = parseAmount(familyAmount) ?? 0;
+  const personalPart = parseAmount(personalAmount) ?? 0;
+  const splitTotal = (familyPart > 0 ? familyPart : 0) + (personalPart > 0 ? personalPart : 0);
   const cloudLine = cloudStatus({
     configured: cloudConfig() !== null,
     signedIn: cloudEmail !== null,
@@ -563,7 +607,13 @@ export function App() {
             <button type="button" className={type === "x" ? "on x" : "x"} onClick={() => chooseType("x")}>Chi</button>
             <button type="button" className={type === "p" ? "on p" : "p"} onClick={() => chooseType("p")}>Chuyển</button>
           </div>
-          {type !== "p" && (
+          {type === "t" && editing === null && (
+            <button type="button" className={split ? "split-toggle on" : "split-toggle"} onClick={toggleSplit}>
+              {split ? "Đang chia lương hai sổ" : "Chia lương hai sổ"}
+            </button>
+          )}
+          {splitting && <small className="hint">Một khoản về một tài khoản. Mỗi sổ chỉ ghi phần của sổ đó.</small>}
+          {type !== "p" && !splitting && (
             <div className="g2">
               <div>
                 <label>Danh mục</label>
@@ -660,22 +710,50 @@ export function App() {
           )}
           <label>Ghi chú</label>
           <input value={note} onChange={(event) => setNote(event.target.value)} />
-          <label htmlFor="amount">Số tiền</label>
-          {suggestions.length > 0 && (
-            <div className="amt-picks" aria-label="Số đã nhập">
-              {suggestions.map((value) => (
-                <button
-                  type="button"
-                  key={value}
-                  className={typedAmount === value ? "on" : ""}
-                  onClick={() => setAmount(formatAmountTyping(String(value)))}
-                >
-                  {formatVnd(value)}
-                </button>
-              ))}
-            </div>
+          {splitting ? (
+            <>
+              <ShareBox
+                title="Phần Gia đình"
+                tone="family"
+                names={familyNames}
+                category={familyCategory}
+                onCategory={setFamilyCategory}
+                amount={familyAmount}
+                onAmount={setFamilyAmount}
+                suggestions={recentAmounts(data.transactions, { scope: "family", type: "t", category: familyCategory })}
+              />
+              <ShareBox
+                title="Phần Cá nhân"
+                tone="personal"
+                names={personalNames}
+                category={personalCategory}
+                onCategory={setPersonalCategory}
+                amount={personalAmount}
+                onAmount={setPersonalAmount}
+                suggestions={recentAmounts(data.transactions, { scope: "personal", type: "t", category: personalCategory })}
+              />
+              {splitTotal > 0 && <div className="share-total">Về tài khoản {formatVnd(splitTotal)}</div>}
+            </>
+          ) : (
+            <>
+              <label htmlFor="amount">Số tiền</label>
+              {suggestions.length > 0 && (
+                <div className="amt-picks" aria-label="Số đã nhập">
+                  {suggestions.map((value) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={typedAmount === value ? "on" : ""}
+                      onClick={() => setAmount(formatAmountTyping(String(value)))}
+                    >
+                      {formatVnd(value)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <MoneyField id="amount" value={amount} onChange={setAmount} />
+            </>
           )}
-          <MoneyField id="amount" value={amount} onChange={setAmount} />
           <div className="btns">
             <button type="button" className="b2" onClick={() => blank(rememberedType, dataRef.current)}>{editing === null ? "Làm mới" : "Hủy sửa"}</button>
             {editing !== null && (
@@ -1182,6 +1260,50 @@ function AccountsSheet({ data, onClose, onAdd, onEdit }: { data: AppData; onClos
         <button type="button" className="b1" onClick={onAdd}>＋ Tài khoản</button>
       </div>
     </>
+  );
+}
+
+function incomeName(data: AppData, scope: LedgerScope): string {
+  const names = listOf(data, scope, "income").map((item) => item.name);
+  return names.includes("Lương") ? "Lương" : (names[0] ?? "");
+}
+
+function ShareBox({ title, tone, names, category, onCategory, amount, onAmount, suggestions }: {
+  title: string;
+  tone: "family" | "personal";
+  names: string[];
+  category: string;
+  onCategory: (value: string) => void;
+  amount: string;
+  onAmount: (value: string) => void;
+  suggestions: number[];
+}) {
+  const picked = names.includes(category) ? category : (names[0] ?? "");
+  const typed = parseAmount(amount);
+  return (
+    <div className={`share ${tone}`}>
+      <b>{title}</b>
+      <label>Danh mục</label>
+      <select value={picked} onChange={(event) => onCategory(event.target.value)}>
+        {names.map((name) => <option key={name} value={name}>{name}</option>)}
+      </select>
+      <label>Số tiền</label>
+      {suggestions.length > 0 && (
+        <div className="amt-picks" aria-label={`Số đã nhập ${title}`}>
+          {suggestions.map((value) => (
+            <button
+              type="button"
+              key={value}
+              className={typed === value ? "on" : ""}
+              onClick={() => onAmount(formatAmountTyping(String(value)))}
+            >
+              {formatVnd(value)}
+            </button>
+          ))}
+        </div>
+      )}
+      <MoneyField value={amount} onChange={onAmount} />
+    </div>
   );
 }
 
