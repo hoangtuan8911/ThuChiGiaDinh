@@ -389,6 +389,7 @@ pre {
   font-weight: 700;
 }
 .menu-list button span { width: 1.4em; text-align: center; }
+.menu-list button.danger { border-color: var(--chi); color: var(--chi); }
 .mn.sheet { margin: 8px 0 4px; }
 .mn.sheet b { color: var(--tx); }
 .mn.sheet button { background: var(--bd); color: var(--tx); }
