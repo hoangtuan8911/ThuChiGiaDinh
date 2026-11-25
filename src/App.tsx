@@ -11,6 +11,7 @@ import {
   recentAmounts,
   type AccountSnapshot,
 } from "./calc";
+import { freshData } from "./defaults";
 import fontUrl from "./fonts/Roboto-Regular.ttf?url";
 import { currentMonth, editAmount, formatAmountTyping, formatDateTime, formatDay, formatFullDay, formatSyncTime, formatVnd, monthLabel, parseAmount, shiftMonth, todayISO } from "./money";
 import {
@@ -59,6 +60,7 @@ const HELP: { title: string; body: string }[] = [
   { title: "Xuất PDF", body: "Mở Menu rồi chọn Xuất PDF. Chọn sổ Gia đình, Cá nhân, hoặc Tổng để xuất cả hai sổ cộng lại, và chọn có in số dư hay không. Phần 1 là tổng hợp thu chi và đường so với 6 tháng trước. Phần 2 là chi tiết từng ngày." },
   { title: "Dữ liệu trên Supabase", body: "Sổ được lưu trên Supabase. Icon mây ở đầu trang: mây gạch chéo là mất kết nối, mây thường là đang nối. Dòng chữ bên cạnh cho biết lần đồng bộ gần nhất. Mất mạng thì máy vẫn giữ sổ và đẩy lên khi có mạng lại. Mở Menu rồi chọn Mây để đăng nhập. Cùng email trên điện thoại khác thì dùng chung một sổ." },
   { title: "Dữ liệu nằm trên máy này", body: "Khi chưa đăng nhập Mây, app không gửi số liệu đi đâu. Vẫn có thể mở Menu, chọn Sao lưu ra file JSON rồi Khôi phục trên máy kia." },
+  { title: "Xóa toàn bộ dữ liệu", body: "Mở Menu, chọn Xóa toàn bộ dữ liệu để xóa hết giao dịch, danh mục, tài khoản và ngân sách, bắt đầu nhập lại từ đầu. Bản đang dùng vẫn được giữ để Hoàn tác nếu bấm nhầm. Nếu đang đăng nhập Mây, sổ trên mây cũng bị xóa theo. Nên Sao lưu trước khi xóa." },
   { title: "Dữ liệu có thể mất", body: "Trên iPhone, Chrome, Safari và icon Màn hình chính là ba sổ khác nhau. Sổ nhập trong Chrome không hiện khi mở icon. Muốn đưa sang icon: trong Chrome mở Menu, bấm Sao lưu, mở icon, mở Menu, bấm Khôi phục. Sau đó chỉ nhập ở một chỗ. Tab Riêng tư, Zalo hoặc Facebook cũng là sổ khác." },
   { title: "Xem mã nguồn", body: "Nhấn Ctrl+Alt+T, hoặc chạm ba lần vào tiêu đề." },
 ];
@@ -427,6 +429,20 @@ export function App() {
     } catch {
       push({ kind: "msg", text: "Không đọc được file." });
     }
+  }
+
+  function resetAllData() {
+    push({
+      kind: "yes",
+      text: "Xóa toàn bộ dữ liệu (giao dịch, danh mục, tài khoản, ngân sách) để nhập lại từ đầu? Bản đang dùng được giữ lại để hoàn tác. Nếu đang đăng nhập Mây, sổ trên mây cũng sẽ bị xóa theo.",
+      onYes: () => {
+        saveUndo(dataRef.current);
+        setHasUndo(true);
+        const next = freshData();
+        commit(next);
+        blank(rememberedType, next);
+      },
+    });
   }
 
   async function exportPdf(includeBalances: boolean, picked: ReportScope) {
@@ -888,6 +904,7 @@ export function App() {
               onPick={(next) => { pop(); push(next); }}
               onBackup={() => { pop(); void backup(); }}
               onRestore={() => { fileRef.current?.click(); pop(); }}
+              onReset={() => { pop(); resetAllData(); }}
             />
           )}
           {dialog.kind === "help" && (
@@ -967,11 +984,12 @@ function Fold({ label, income, expense, open, onToggle, children }: {
   );
 }
 
-function MenuSheet({ onClose, onPick, onBackup, onRestore }: {
+function MenuSheet({ onClose, onPick, onBackup, onRestore, onReset }: {
   onClose: () => void;
   onPick: (dialog: Dialog) => void;
   onBackup: () => void;
   onRestore: () => void;
+  onReset: () => void;
 }) {
   return (
     <>
@@ -997,6 +1015,7 @@ function MenuSheet({ onClose, onPick, onBackup, onRestore }: {
         <button type="button" onClick={onBackup}><span aria-hidden="true">💾</span> Sao lưu</button>
         <button type="button" onClick={onRestore}><span aria-hidden="true">📥</span> Khôi phục</button>
         <button type="button" onClick={() => onPick({ kind: "cloud" })}><span aria-hidden="true">☁</span> Mây</button>
+        <button type="button" className="danger" onClick={onReset}><span aria-hidden="true">🗑</span> Xóa toàn bộ dữ liệu</button>
       </div>
       <div className="menu-list tail">
         <button type="button" onClick={() => onPick({ kind: "help" })}><span aria-hidden="true">❓</span> Hướng dẫn</button>
